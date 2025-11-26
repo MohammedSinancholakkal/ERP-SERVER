@@ -39,8 +39,6 @@
 // module.exports = sql;  
 
 
-
-
 const sql = require("mssql");
 
 const config = {
@@ -48,14 +46,22 @@ const config = {
   password: process.env.DB_PASSWORD,
   server: process.env.DB_SERVER,
   database: process.env.DB_NAME,
+  port: 1433,
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000,
+  },
+  connectionTimeout: 30000,
+  requestTimeout: 30000,
   options: {
     encrypt: true,
-    trustServerCertificate: true 
+    trustServerCertificate: true
   },
 };
 
 sql.connect(config)
-  .then(() => console.log("Database connected successfully"))
-  .catch((err) => console.log("DB connection failed", err));
+  .then(() => console.log("MSSQL Connected Successfully"))
+  .catch((err) => console.log("MSSQL Connection Error:", err));
 
-module.exports = sql;  
+module.exports = sql;
