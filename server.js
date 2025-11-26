@@ -79,11 +79,16 @@ ERP_SERVER.use("/api/products", productsRoutes);
 // const PORT = process.env.PORT;
 const PORT = process.env.PORT || 8080;
 
-ERP_SERVER.listen(PORT, () => {
+// 🚀 THIS IS THE MAIN FIX
+ERP_SERVER.listen(PORT, "0.0.0.0", () => {
   console.log(`ERP_SERVER running on port ${PORT}`);
 });
 
-
+// --- ADD THIS ---
+ERP_SERVER.get("/", (req, res) => {
+  res.send("🚀 ERP Backend is running successfully on Railway!");
+});
+// -----------------
 
 
 // const PORT = process.env.PORT;
