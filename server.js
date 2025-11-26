@@ -76,7 +76,8 @@ ERP_SERVER.use("/api/products", productsRoutes);
 
 
 
-const PORT = process.env.PORT;
+// const PORT = process.env.PORT;
+const PORT = process.env.PORT || 8080;
 
 ERP_SERVER.listen(PORT, () => {
   console.log(`ERP_SERVER running on port ${PORT}`);
