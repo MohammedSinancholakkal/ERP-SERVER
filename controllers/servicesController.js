@@ -157,3 +157,47 @@ exports.searchServices = async (req, res) => {
     res.status(500).json({ message: "Search failed" });
   }
 };
+
+
+// GET INACTIVE SERVICES
+exports.getInactiveServices = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT *
+      FROM Services
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+
+    res.status(200).json(result.recordset);
+  } catch (error) {
+    console.log("GET INACTIVE SERVICES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// RESTORE SERVICE
+exports.restoreService = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Services
+      SET 
+        IsActive = 1,
+        DeleteUserId = NULL,
+        DeleteDate = NULL,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE()
+      WHERE id = ${id}
+    `;
+
+    res.status(200).json({ message: "Service restored successfully" });
+  } catch (error) {
+    console.log("RESTORE SERVICE ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

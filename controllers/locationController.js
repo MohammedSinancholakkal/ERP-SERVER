@@ -177,3 +177,73 @@ exports.searchLocations = async (req, res) => {
     res.status(500).json({ message: "Search Error" });
   }
 };
+
+
+// ================================
+// GET INACTIVE LOCATIONS
+// ================================
+exports.getInactiveLocations = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        L.Id,
+        L.Name,
+        L.CountryId,
+        C.name AS CountryName,
+        L.StateId,
+        S.name AS StateName,
+        L.CityId,
+        CI.name AS CityName,
+        L.Address,
+        L.Latitude,
+        L.Longitude,
+        L.InsertDate,
+        L.InsertUserId,
+        L.UpdateDate,
+        L.UpdateUserId,
+        L.DeleteDate,
+        L.DeleteUserId
+      FROM Locations L
+      LEFT JOIN Countries C ON L.CountryId = C.id
+      LEFT JOIN States S ON L.StateId = S.id
+      LEFT JOIN Cities CI ON L.CityId = CI.id
+      WHERE L.IsActive = 0
+      ORDER BY L.Id DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+  } catch (error) {
+    console.log("GET INACTIVE LOCATIONS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ================================
+// RESTORE LOCATION
+// ================================
+exports.restoreLocation = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  if (!userId)
+    return res.status(400).json({ message: "userId required" });
+
+  try {
+    await sql.query`
+      UPDATE Locations
+      SET IsActive = 1,
+          DeleteUserId = NULL,
+          DeleteDate = NULL,
+          UpdateUserId = ${userId},
+          UpdateDate = GETDATE()
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Location restored successfully" });
+  } catch (error) {
+    console.log("RESTORE LOCATION ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

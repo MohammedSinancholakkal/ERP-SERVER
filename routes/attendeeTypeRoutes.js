@@ -17,4 +17,11 @@ router.put("/delete/:id", ctrl.deleteAttendeeType);
 // SEARCH
 router.get("/search", ctrl.searchAttendeeTypes);
 
+// GET INACTIVE (soft deleted)
+router.get("/inactive", ctrl.getInactiveAttendeeTypes);
+
+// RESTORE
+router.put("/restore/:id", ctrl.restoreAttendeeType);
+
+
 module.exports = router;

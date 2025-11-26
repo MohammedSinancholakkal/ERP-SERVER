@@ -9,5 +9,8 @@ router.put("/update/:id", serviceController.updateService);
 router.put("/delete/:id", serviceController.deleteService);
 router.get("/dropdown", serviceController.getServicesDropdown);
 router.get("/search", serviceController.searchServices);
+router.get("/inactive", serviceController.getInactiveServices);
+router.put("/restore/:id", serviceController.restoreService);
+
 
 module.exports = router;

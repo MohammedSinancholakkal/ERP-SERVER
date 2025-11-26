@@ -168,3 +168,57 @@ exports.searchExpenseTypes = async (req, res) => {
     res.status(500).json({ message: "Error searching expense types" });
   }
 };
+
+
+
+
+// ================================
+// GET INACTIVE EXPENSE TYPES
+// ================================
+exports.getInactiveExpenseTypes = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        typeId,
+        typeName,
+        insertDate,
+        deleteDate,
+        deleteUserId
+      FROM ExpenseTypes
+      WHERE isActive = 0
+      ORDER BY typeId DESC
+    `;
+
+    res.status(200).json(result.recordset);
+  } catch (error) {
+    console.log("GET INACTIVE EXPENSE TYPES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE EXPENSE TYPE
+// ================================
+exports.restoreExpenseType = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE ExpenseTypes
+      SET 
+        isActive = 1,
+        deleteDate = NULL,
+        deleteUserId = NULL,
+        updateUserId = ${userId},
+        updateDate = GETDATE()
+      WHERE typeId = ${id}
+    `;
+
+    res.status(200).json({ message: "Expense type restored successfully" });
+  } catch (error) {
+    console.log("RESTORE EXPENSE TYPE ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

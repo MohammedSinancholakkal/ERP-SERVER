@@ -7,7 +7,7 @@ router.get("/all", shipperController.getAllShippers);
 
 // Add new shipper
 router.post("/add", shipperController.addShipper);
-
+ 
 // Update shipper
 router.put("/update/:id", shipperController.updateShipper);
 
@@ -16,5 +16,12 @@ router.put("/delete/:id", shipperController.deleteShipper);
 
 // Search
 router.get("/search", shipperController.searchShippers);
+
+// Get inactive shippers
+router.get("/inactive", shipperController.getInactiveShippers);
+
+// Restore shipper
+router.put("/restore/:id", shipperController.restoreShipper);
+
 
 module.exports = router;

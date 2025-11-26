@@ -21,5 +21,12 @@ router.get("/dropdown", regionController.getAllRegionsDropdown);
 // SEARCH
 router.get("/search", regionController.searchRegions);
 
+// Get inactive regions
+router.get("/inactive", regionController.getInactiveRegions);
+
+// Restore region
+router.put("/restore/:id", regionController.restoreRegion);
+
+
 module.exports = router;
     

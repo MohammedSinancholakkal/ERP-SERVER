@@ -17,4 +17,10 @@ router.put("/delete/:id", ctrl.deleteWarehouse);
 // SEARCH
 router.get("/search", ctrl.searchWarehouses);
 
+// INACTIVE
+router.get("/inactive", ctrl.getInactiveWarehouses);
+
+// RESTORE
+router.put("/restore/:id", ctrl.restoreWarehouse);
+
 module.exports = router;

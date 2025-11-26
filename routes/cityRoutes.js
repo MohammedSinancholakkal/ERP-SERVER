@@ -46,4 +46,12 @@ router.get("/countries/all", cityController.getAllCountries);
 // Search cities
 router.get("/search", cityController.searchCities);
 
+// GET inactive cities (soft-deleted)
+router.get("/inactive", cityController.getInactiveCities);
+
+// RESTORE a city
+router.put("/restore/:id", cityController.restoreCity);
+
+
+
 module.exports = router;

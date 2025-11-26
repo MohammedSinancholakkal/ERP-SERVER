@@ -17,4 +17,9 @@ router.put("/delete/:id", ctrl.deleteDeduction);
 // SEARCH
 router.get("/search", ctrl.searchDeductions);
 
+router.get("/inactive", ctrl.getInactiveDeductions);
+
+router.put("/restore/:id", ctrl.restoreDeduction);
+
+
 module.exports = router;

@@ -25,6 +25,12 @@ const attendeeTypeRoutes = require("./routes/attendeeTypeRoutes");
 const attendanceStatusRoutes = require("./routes/attendanceStatusRoutes");
 const locationRoutes = require("./routes/locationRoutes");
 const warehouseRoutes = require("./routes/warehouseRoutes");
+const unitsRoutes = require("./routes/unitsRoutes");
+const brandsRoutes = require("./routes/brandsRoutes");
+const categoriesRoutes = require("./routes/categoriesRoutes");
+const productsRoutes = require("./routes/productsRoutes");
+
+
 
 // DB CONNECT
 require('./db/dbConfig');
@@ -35,14 +41,14 @@ const ERP_SERVER = express();
 ERP_SERVER.use(cors());
 ERP_SERVER.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// 🟢 1) MULTER ROUTES FIRST
-ERP_SERVER.use("/api/banks", bankRoutes);
-
-// 🟢 2) NOW ENABLE JSON FOR ALL OTHER ROUTES
+// 🟢 JSON PARSING MUST BE BEFORE ALL ROUTES
 ERP_SERVER.use(express.json({ limit: "20mb" }));
 ERP_SERVER.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
-// 🟢 3) NOW ADD NORMAL ROUTES
+// 🟢 BANK ROUTES (multer allowed)
+ERP_SERVER.use("/api/banks", bankRoutes);
+
+// 🟢 OTHER ROUTES
 ERP_SERVER.use("/api/auth", userRoutes);
 ERP_SERVER.use("/api/countries", countryRoutes);
 ERP_SERVER.use("/api/cities", cityRoutes);
@@ -63,10 +69,18 @@ ERP_SERVER.use("/api/attendee-types", attendeeTypeRoutes);
 ERP_SERVER.use("/api/attendance-statuses", attendanceStatusRoutes);
 ERP_SERVER.use("/api/locations", locationRoutes);
 ERP_SERVER.use("/api/warehouses", warehouseRoutes);
+ERP_SERVER.use("/api/units", unitsRoutes); 
+ERP_SERVER.use("/api/brands", brandsRoutes);
+ERP_SERVER.use("/api/categories", categoriesRoutes);
+ERP_SERVER.use("/api/products", productsRoutes);
+
+
+
+
+
 
 const PORT = process.env.PORT || 5000;
 
 ERP_SERVER.listen(PORT, () => {
   console.log(`ERP_SERVER running on port ${PORT}`);
 });
-  

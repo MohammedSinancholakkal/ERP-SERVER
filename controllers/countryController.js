@@ -221,7 +221,7 @@ exports.updateCountry = async (req, res) => {
 exports.deleteCountry = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
-
+  
   try {
     await sql.query`
       UPDATE Countries 
@@ -253,5 +253,62 @@ exports.searchCountries = async (req, res) => {
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+
+// inactive
+// =============================================================
+// GET INACTIVE COUNTRIES (soft-deleted entries)
+// =============================================================
+exports.getInactiveCountries = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        id,
+        name,
+        isActive,
+        deleteDate,
+        deleteUserId
+      FROM Countries
+      WHERE isActive = 0
+      ORDER BY deleteDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset
+    });
+
+  } catch (error) {
+    console.error("GET INACTIVE COUNTRIES ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+// =============================================================
+// RESTORE COUNTRY (set isActive back to 1)
+// =============================================================
+exports.restoreCountry = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Countries
+      SET 
+        isActive = 1,
+        updateDate = GETDATE(),
+        updateUserId = ${userId}
+      WHERE id = ${id}
+    `;
+
+    res.status(200).json({ message: "Country restored successfully" });
+
+  } catch (error) {
+    console.error("RESTORE COUNTRY ERROR:", error);
+    res.status(500).json({ message: "Server error" });
   }
 };

@@ -17,4 +17,11 @@ router.put("/delete/:id", ctrl.deleteAgendaItemType);
 // SEARCH
 router.get("/search", ctrl.searchAgendaItemTypes);
 
+// INACTIVE
+router.get("/inactive", ctrl.getInactiveAgendaItemTypes);
+
+
+// RESTORE
+router.put("/restore/:id", ctrl.restoreAgendaItemType);
+
 module.exports = router;

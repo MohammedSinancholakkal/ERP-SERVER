@@ -147,3 +147,59 @@ exports.searchSupplierGroups = async (req, res) => {
     res.status(500).json({ message: "Error searching supplier groups" });
   }
 };
+
+
+// ================================
+// GET INACTIVE SUPPLIER GROUPS
+// ================================
+exports.getInactiveSupplierGroups = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        GroupName,
+        Description,
+        IsActive,
+        DeleteDate,
+        DeleteUserId
+      FROM SupplierGroups
+      WHERE IsActive = 0
+      ORDER BY DeleteDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset
+    });
+
+  } catch (error) {
+    console.log("GET INACTIVE SUPPLIER GROUPS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ================================
+// RESTORE SUPPLIER GROUP
+// ================================
+exports.restoreSupplierGroup = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE SupplierGroups
+      SET 
+        IsActive = 1,
+        UpdateDate = GETDATE(),
+        UpdateUserId = ${userId}
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Supplier group restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE SUPPLIER GROUP ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

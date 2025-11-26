@@ -165,3 +165,56 @@ exports.searchRegions = async (req, res) => {
     }
   };
   
+
+
+  // ================================
+// GET INACTIVE REGIONS
+// ================================
+exports.getInactiveRegions = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        regionId,
+        regionName,
+        isActive,
+        deleteDate,
+        updateUserId
+      FROM Regions
+      WHERE isActive = 0
+      ORDER BY deleteDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset,
+    });
+  } catch (error) {
+    console.log("GET INACTIVE REGIONS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ================================
+// RESTORE REGION
+// ================================
+exports.restoreRegion = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Regions
+      SET 
+        isActive = 1,
+        updateUserId = ${userId},
+        updateDate = GETDATE()
+      WHERE regionId = ${id}
+    `;
+
+    res.status(200).json({ message: "Region restored successfully" });
+  } catch (error) {
+    console.log("RESTORE REGION ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

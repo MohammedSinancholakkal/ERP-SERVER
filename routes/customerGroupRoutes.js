@@ -17,4 +17,11 @@ router.put("/delete/:id", customerGroupController.deleteCustomerGroup);
 // Search
 router.get("/search", customerGroupController.searchCustomerGroups);
 
+// Get inactive groups
+router.get("/inactive", customerGroupController.getInactiveCustomerGroups);
+
+// Restore group
+router.put("/restore/:id", customerGroupController.restoreCustomerGroup);
+
+
 module.exports = router;

@@ -73,4 +73,14 @@ router.put("/delete/:id", stateController.deleteState);
 // Search states
 router.get("/search", stateController.searchStates);
 
+
+
+// Get inactive states (soft-deleted)
+router.get("/inactive", stateController.getInactiveStates);
+
+
+// Restore state
+router.put("/restore/:id", stateController.restoreState);
+
+
 module.exports = router;

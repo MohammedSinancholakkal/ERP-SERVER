@@ -20,4 +20,11 @@ router.get("/search", incomesController.searchIncomes);
 // Dropdown
 router.get("/dropdown", incomesController.getIncomeDropdown);
 
+// Inactive list
+router.get("/inactive", incomesController.getInactiveIncomes);
+
+// Restore income
+router.put("/restore/:id", incomesController.restoreIncome);
+
+
 module.exports = router;

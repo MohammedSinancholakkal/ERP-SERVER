@@ -134,3 +134,57 @@ exports.searchAttendeeTypes = async (req, res) => {
     res.status(500).json({ message: "Error searching attendee types" });
   }
 };
+
+
+// ================================
+// GET INACTIVE ATTENDEE TYPES
+// ================================
+exports.getInactiveAttendeeTypes = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        Name,
+        IsActive,
+        DeleteDate,
+        DeleteUserId
+      FROM AttendeeTypes
+      WHERE IsActive = 0
+      ORDER BY DeleteDate DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+
+  } catch (error) {
+    console.log("GET INACTIVE ATTENDEE TYPES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE ATTENDEE TYPE
+// ================================
+exports.restoreAttendeeType = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE AttendeeTypes
+      SET 
+        IsActive = 1,
+        DeleteUserId = NULL,
+        DeleteDate = NULL,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE()
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Attendee type restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE ATTENDEE TYPE ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

@@ -136,3 +136,43 @@ exports.searchDeductions = async (req, res) => {
     res.status(500).json({ message: "Error searching deductions" });
   }
 };
+
+
+
+exports.getInactiveDeductions = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT Id, Name, Description
+      FROM Deductions
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+    res.status(200).json({ records: result.recordset });
+  } catch (err) {
+    console.log("INACTIVE DEDUCTIONS ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+exports.restoreDeduction = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Deductions
+      SET IsActive = 1,
+          DeleteUserId = NULL,
+          DeleteDate = NULL,
+          UpdateUserId = ${userId},
+          UpdateDate = GETDATE()
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Deduction restored successfully" });
+  } catch (err) {
+    console.log("RESTORE DEDUCTION ERROR:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

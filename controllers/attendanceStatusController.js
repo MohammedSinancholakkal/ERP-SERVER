@@ -136,3 +136,59 @@ exports.searchAttendanceStatuses = async (req, res) => {
     res.status(500).json({ message: "Search error" });
   }
 };
+
+
+// ==========================================================
+// GET INACTIVE ATTENDANCE STATUSES
+// ==========================================================
+exports.getInactiveAttendanceStatuses = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        Name,
+        InsertDate,
+        InsertUserId,
+        UpdateDate,
+        UpdateUserId,
+        DeleteDate,
+        DeleteUserId,
+        IsActive
+      FROM AttendanceStatuses
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+  } catch (error) {
+    console.log("GET INACTIVE ATTENDANCE STATUSES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ==========================================================
+// RESTORE ATTENDANCE STATUS
+// ==========================================================
+exports.restoreAttendanceStatus = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE AttendanceStatuses
+      SET 
+        IsActive = 1,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE(),
+        DeleteUserId = NULL,
+        DeleteDate = NULL
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Attendance status restored successfully" });
+  } catch (error) {
+    console.log("RESTORE ATTENDANCE STATUS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

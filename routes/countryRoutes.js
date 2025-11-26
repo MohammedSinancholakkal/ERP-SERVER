@@ -32,5 +32,13 @@ router.delete("/delete/:id", countryController.deleteCountry);
 // Search
 router.get("/search", countryController.searchCountries);
 
+
+// inactive routes
+// 🔥 NEW: Get ALL inactive countries (no pagination needed)
+router.get("/inactive", countryController.getInactiveCountries);
+
+// 🔥 NEW: Restore a deleted country
+router.put("/restore/:id", countryController.restoreCountry);
+
 module.exports = router;
         

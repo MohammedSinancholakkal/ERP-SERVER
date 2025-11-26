@@ -10,4 +10,8 @@ router.put("/delete/:id", territoryController.deleteTerritory);
 // SEARCH
 router.get("/search", territoryController.searchTerritories);
 
+router.get("/inactive", territoryController.getInactiveTerritories);
+router.put("/restore/:id", territoryController.restoreTerritory);
+
+
 module.exports = router;

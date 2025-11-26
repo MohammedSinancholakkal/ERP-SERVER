@@ -10,11 +10,18 @@ router.post("/add", ctrl.addLocation);
 
 // UPDATE
 router.put("/update/:id", ctrl.updateLocation);
-
+ 
 // DELETE
 router.put("/delete/:id", ctrl.deleteLocation);
 
 // SEARCH
 router.get("/search", ctrl.searchLocations);
+
+// INACTIVE (list)
+router.get("/inactive", ctrl.getInactiveLocations);
+
+// RESTORE
+router.put("/restore/:id", ctrl.restoreLocation);
+
 
 module.exports = router;

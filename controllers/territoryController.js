@@ -164,3 +164,56 @@ exports.searchTerritories = async (req, res) => {
     }
   };
   
+
+
+  // ================================
+// GET INACTIVE TERRITORIES
+// ================================
+exports.getInactiveTerritories = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        t.id,
+        t.territoryDescription,
+        t.regionId,
+        r.regionName,
+        t.isActive
+      FROM Territories t
+      LEFT JOIN Regions r ON t.regionId = r.regionId
+      WHERE t.isActive = 0
+      ORDER BY t.id DESC
+    `;
+
+    res.status(200).json(result.recordset);
+  } catch (error) {
+    console.log("GET INACTIVE TERRITORIES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE TERRITORY
+// ================================
+exports.restoreTerritory = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Territories
+      SET 
+        isActive = 1,
+        deleteUserId = NULL,
+        deleteDate = NULL,
+        updateUserId = ${userId},
+        updateDate = GETDATE()
+      WHERE id = ${id}
+    `;
+
+    res.status(200).json({ message: "Territory restored successfully" });
+  } catch (error) {
+    console.log("RESTORE TERRITORY ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

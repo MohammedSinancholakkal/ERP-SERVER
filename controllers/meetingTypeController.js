@@ -136,3 +136,62 @@ exports.searchMeetingTypes = async (req, res) => {
     res.status(500).json({ message: "Error searching meeting types" });
   }
 };
+
+
+// ==========================================================
+// RESTORE MEETING TYPE
+// ==========================================================
+exports.restoreMeetingType = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE MeetingTypes
+      SET 
+        IsActive = 1,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE(),
+        DeleteUserId = NULL,
+        DeleteDate = NULL
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Meeting type restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE MEETING TYPE ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ==========================================================
+// GET INACTIVE MEETING TYPES
+// ==========================================================
+exports.getInactiveMeetingTypes = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        Name,
+        InsertDate,
+        InsertUserId,
+        UpdateDate,
+        UpdateUserId,
+        DeleteDate,
+        DeleteUserId,
+        IsActive
+      FROM MeetingTypes
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+
+  } catch (error) {
+    console.log("GET INACTIVE MEETING TYPES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

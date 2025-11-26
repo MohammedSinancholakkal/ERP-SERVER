@@ -149,3 +149,60 @@ exports.searchCustomerGroups = async (req, res) => {
     res.status(500).json({ message: "Error searching customer groups" });
   }
 };
+
+
+
+// ================================
+// GET INACTIVE CUSTOMER GROUPS
+// ================================
+exports.getInactiveCustomerGroups = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        GroupName,
+        Description,
+        IsActive,
+        DeleteDate,
+        DeleteUserId
+      FROM CustomerGroups
+      WHERE IsActive = 0
+      ORDER BY DeleteDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset
+    });
+
+  } catch (error) {
+    console.log("GET INACTIVE CUSTOMER GROUPS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ================================
+// RESTORE CUSTOMER GROUP
+// ================================
+exports.restoreCustomerGroup = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE CustomerGroups
+      SET 
+        IsActive = 1,
+        UpdateDate = GETDATE(),
+        UpdateUserId = ${userId}
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Customer Group restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE CUSTOMER GROUP ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

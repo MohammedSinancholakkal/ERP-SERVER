@@ -297,3 +297,55 @@ exports.searchStates = async (req, res) => {
     res.status(500).json({ message: "Error searching states" });
   }
 };
+
+
+
+
+// =============================================================
+// GET INACTIVE STATES (soft-deleted)
+// =============================================================
+exports.getInactiveStates = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT
+        id,
+        name,
+        countryId,
+        isActive,
+        deleteDate,
+        deleteUserId
+      FROM States
+      WHERE isActive = 0
+      ORDER BY deleteDate DESC
+    `;
+    res.status(200).json({ records: result.recordset });
+  } catch (error) {
+    console.error("GET INACTIVE STATES ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+// =============================================================
+// RESTORE STATE
+// =============================================================
+exports.restoreState = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  try {
+    await sql.query`
+      UPDATE States
+      SET
+        isActive = 1,
+        updateDate = GETDATE(),
+        updateUserId = ${userId}
+      WHERE id = ${id}
+    `;
+    res.status(200).json({ message: "State restored successfully" });
+  } catch (error) {
+    console.error("RESTORE STATE ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+

@@ -20,4 +20,10 @@ router.get("/dropdown", expenseController.getExpenseTypesDropdown);
 // Search
 router.get("/search", expenseController.searchExpenseTypes);
 
+// Inactive list
+router.get("/inactive", expenseController.getInactiveExpenseTypes);
+
+// Restore inactive
+router.put("/restore/:id", expenseController.restoreExpenseType);
+
 module.exports = router;

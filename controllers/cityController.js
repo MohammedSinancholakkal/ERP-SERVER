@@ -379,3 +379,50 @@ exports.getAllCountries = async (req, res) => {
     res.status(500).json({ message: "Error loading countries" });
   }
 };
+
+
+
+
+
+// GET INACTIVE CITIES
+exports.getInactiveCities = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT
+        id,
+        name,
+        countryId,
+        stateId,
+        isActive,
+        deleteDate,
+        deleteUserId
+      FROM Cities
+      WHERE isActive = 0
+      ORDER BY deleteDate DESC
+    `;
+    res.status(200).json({ records: result.recordset });
+  } catch (error) {
+    console.error("GET INACTIVE CITIES ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// RESTORE CITY
+exports.restoreCity = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+  try {
+    await sql.query`
+      UPDATE Cities
+      SET
+        isActive = 1,
+        updateDate = GETDATE(),
+        updateUserId = ${userId}
+      WHERE id = ${id}
+    `;
+    res.status(200).json({ message: "City restored successfully" });
+  } catch (error) {
+    console.error("RESTORE CITY ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};

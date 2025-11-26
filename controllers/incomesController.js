@@ -167,3 +167,61 @@ exports.getIncomeDropdown = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
+
+
+// ================================
+// GET INACTIVE INCOMES
+// ================================
+exports.getInactiveIncomes = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        IncomeName,
+        Description,
+        InsertDate,
+        InsertUserId,
+        UpdateDate,
+        UpdateUserId,
+        DeleteDate,
+        DeleteUserId
+      FROM Incomes
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+
+  } catch (error) {
+    console.log("GET INACTIVE INCOMES ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE INCOME
+// ================================
+exports.restoreIncome = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Incomes
+      SET 
+        IsActive = 1,
+        DeleteUserId = NULL,
+        DeleteDate = NULL,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE()
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Income restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE INCOME ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

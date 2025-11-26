@@ -17,4 +17,10 @@ router.put("/delete/:id", supplierGroupController.deleteSupplierGroup);
 // Search
 router.get("/search", supplierGroupController.searchSupplierGroups);
 
+// NEW — Get inactive
+router.get("/inactive", supplierGroupController.getInactiveSupplierGroups);
+
+// NEW — Restore
+router.put("/restore/:id", supplierGroupController.restoreSupplierGroup);
+
 module.exports = router;

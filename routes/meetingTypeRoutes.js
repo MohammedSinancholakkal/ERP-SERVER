@@ -17,4 +17,8 @@ router.put("/delete/:id", ctrl.deleteMeetingType);
 // SEARCH
 router.get("/search", ctrl.searchMeetingTypes);
 
+router.get("/inactive", ctrl.getInactiveMeetingTypes);
+router.put("/restore/:id", ctrl.restoreMeetingType);
+
+
 module.exports = router;

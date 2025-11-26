@@ -134,3 +134,58 @@ exports.searchResolutionStatuses = async (req, res) => {
     res.status(500).json({ message: "Error searching resolution statuses" });
   }
 };
+
+
+// ================================
+// GET ALL INACTIVE ROWS
+// ================================
+exports.getInactiveResolutionStatuses = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        Name,
+        IsActive,
+        DeleteDate,
+        DeleteUserId
+      FROM ResolutionStatuses
+      WHERE IsActive = 0
+      ORDER BY DeleteDate DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+
+  } catch (error) {
+    console.log("GET INACTIVE RESOLUTION STATUS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+
+// ================================
+// RESTORE
+// ================================
+exports.restoreResolutionStatus = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE ResolutionStatuses
+      SET 
+        IsActive = 1,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE(),
+        DeleteUserId = NULL,
+        DeleteDate = NULL
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Resolution status restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE RESOLUTION STATUS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

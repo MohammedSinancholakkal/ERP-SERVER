@@ -136,3 +136,57 @@ exports.searchAgendaItemTypes = async (req, res) => {
     res.status(500).json({ message: "Error searching agenda item types" });
   }
 };
+
+
+
+// ================================
+// GET ALL INACTIVE
+// ================================
+exports.getInactiveAgendaItemTypes = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id, Name, InsertDate, InsertUserId, DeleteDate, DeleteUserId
+      FROM AgendaItemTypes
+      WHERE IsActive = 0
+      ORDER BY Id DESC
+    `;
+
+    res.status(200).json({
+      total: result.recordset.length,
+      records: result.recordset
+    });
+
+  } catch (err) {
+    console.log("GET INACTIVE AGENDA ITEM TYPES ERROR:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE
+// ================================
+exports.restoreAgendaItemType = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE AgendaItemTypes
+      SET 
+        IsActive = 1,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE(),
+        DeleteUserId = NULL,
+        DeleteDate = NULL
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Agenda item type restored successfully" });
+
+  } catch (err) {
+    console.log("RESTORE AGENDA ITEM TYPE ERROR:", err);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

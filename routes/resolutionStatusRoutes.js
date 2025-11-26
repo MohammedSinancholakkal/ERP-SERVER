@@ -17,4 +17,11 @@ router.put("/delete/:id", ctrl.deleteResolutionStatus);
 // SEARCH
 router.get("/search", ctrl.searchResolutionStatuses);
 
+
+// GET ALL INACTIVE
+router.get("/inactive", ctrl.getInactiveResolutionStatuses);
+
+
+// RESTORE
+router.put("/restore/:id", ctrl.restoreResolutionStatus);
 module.exports = router;

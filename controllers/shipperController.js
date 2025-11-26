@@ -165,3 +165,58 @@ exports.searchShippers = async (req, res) => {
     res.status(500).json({ message: "Error searching shippers" });
   }
 };
+
+
+// ================================
+// GET INACTIVE SHIPPERS
+// ================================
+exports.getInactiveShippers = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        Id,
+        CompanyName,
+        Phone,
+        IsActive,
+        DeleteDate,
+        DeleteUserId
+      FROM Shippers
+      WHERE IsActive = 0
+      ORDER BY DeleteDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset
+    });
+
+  } catch (error) {
+    console.log("GET INACTIVE SHIPPERS ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+
+// ================================
+// RESTORE SHIPPER
+// ================================
+exports.restoreShipper = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Shippers
+      SET 
+        IsActive = 1,
+        UpdateDate = GETDATE(),
+        UpdateUserId = ${userId}
+      WHERE Id = ${id}
+    `;
+
+    res.status(200).json({ message: "Shipper restored successfully" });
+
+  } catch (error) {
+    console.log("RESTORE SHIPPER ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
+  }
+};

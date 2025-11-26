@@ -17,4 +17,9 @@ router.put("/delete/:id", ctrl.deleteAttendanceStatus);
 // SEARCH
 router.get("/search", ctrl.searchAttendanceStatuses);
 
+
+// INACTIVE
+router.get("/inactive", ctrl.getInactiveAttendanceStatuses);
+router.put("/restore/:id", ctrl.restoreAttendanceStatus);
+
 module.exports = router;
