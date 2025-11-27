@@ -142,6 +142,7 @@ const ERP_SERVER = express();
 // =====================
 ERP_SERVER.use(cors({
   origin: [
+    "https://erp-front-roan.vercel.app", 
     "https://erp-front-delta.vercel.app",
     "http://localhost:5173"
   ],
