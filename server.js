@@ -29,7 +29,19 @@ const unitsRoutes = require("./routes/unitsRoutes");
 const brandsRoutes = require("./routes/brandsRoutes");
 const categoriesRoutes = require("./routes/categoriesRoutes");
 const productsRoutes = require("./routes/productsRoutes");
+const stocksRoutes = require("./routes/stocksRoutes");
+const damagedProductsRoutes = require("./routes/damagedProductsRoutes");
+const departmentsRoutes = require("./routes/departmentsRoutes");
+const designationsRoutes = require("./routes/designationsRoutes");
+const employeeRoutes = require("./routes/employeeRoutes");
+const rolesRoutes = require("./routes/rolesRoutes");
+const currencyRoutes = require("./routes/currencyRoutes"); 
+const languageRoutes = require("./routes/languageRoutes");
+const expenseRoutes = require("./routes/expenseRoutes");
 
+
+
+    
 
 
 // DB CONNECT
@@ -73,6 +85,21 @@ ERP_SERVER.use("/api/units", unitsRoutes);
 ERP_SERVER.use("/api/brands", brandsRoutes);
 ERP_SERVER.use("/api/categories", categoriesRoutes);
 ERP_SERVER.use("/api/products", productsRoutes);
+ERP_SERVER.use("/api/stocks", stocksRoutes);
+ERP_SERVER.use("/api/damaged-products", damagedProductsRoutes);
+ERP_SERVER.use("/api/departments", departmentsRoutes);
+ERP_SERVER.use("/api/designations", designationsRoutes);
+ERP_SERVER.use("/api/employees", employeeRoutes);
+ERP_SERVER.use("/api/roles", rolesRoutes);
+ERP_SERVER.use("/api/currencies", currencyRoutes);
+ERP_SERVER.use("/api/languages", languageRoutes);
+ERP_SERVER.use("/api/expenses", expenseRoutes);
+
+
+
+
+
+
 
 
 
@@ -88,11 +115,6 @@ ERP_SERVER.listen(PORT, "0.0.0.0", () => {
 ERP_SERVER.get("/", (req, res) => {
   res.send("🚀 ERP Backend is running successfully on Railway!");
 });
-// -----------------
 
 
-// const PORT = process.env.PORT;
 
-// ERP_SERVER.listen(PORT, () => {
-//   console.log(`ERP_SERVER running on port ${PORT}`);
-// });

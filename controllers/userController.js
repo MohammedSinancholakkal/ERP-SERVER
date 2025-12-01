@@ -235,3 +235,226 @@ exports.resetPassword = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+// ----------------------------
+// DELETE PHYSICAL FILE
+// ----------------------------
+const deleteFile = (filePath) => {
+  if (!filePath) return;
+
+  try {
+    const full = path.join(__dirname, "..", filePath);
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch (e) {
+    console.error("Failed deleting file:", e);
+  }
+};
+
+// =====================================================
+// GET USERS (Paginated)
+// =====================================================
+exports.getAllUsers = async (req, res) => {
+  try {
+    let page = parseInt(req.query.page) || 1;
+    let limit = parseInt(req.query.limit) || 25;
+    let offset = (page - 1) * limit;
+
+    const total = await sql.query`
+      SELECT COUNT(*) AS Total FROM Users WHERE isActive = 1
+    `;
+
+    const result = await sql.query`
+      SELECT 
+        userId, username, displayName, email, source, userImage, insertDate, updateDate
+      FROM Users
+      WHERE isActive = 1
+      ORDER BY userId DESC
+      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+    `;
+
+    res.status(200).json({
+      total: total.recordset[0].Total,
+      records: result.recordset,
+    });
+  } catch (e) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// =====================================================
+// ADD USER
+// =====================================================
+exports.addUser = async (req, res) => {
+  const { username, displayName, email, password, source, userId } = req.body;
+
+  if (!username || !password)
+    return res.status(400).json({ message: "Required fields missing" });
+
+  let imgPath = null;
+
+  if (req.file) {
+    imgPath = `/uploads/signatures/${req.file.filename}`;
+  }
+
+  try {
+    const hashed = await argon2.hash(password);
+
+    await sql.query`
+      INSERT INTO Users
+      (username, displayName, email, passwordHashed, userImage, source, insertUserId)
+      VALUES
+      (${username}, ${displayName}, ${email}, ${hashed}, ${imgPath}, ${source}, ${userId})
+    `;
+
+    res.status(201).json({ message: "User added successfully" });
+  } catch (e) {
+    if (imgPath) deleteFile(imgPath);
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// =====================================================
+// UPDATE USER
+// =====================================================
+exports.updateUser = async (req, res) => {
+  const { id } = req.params;
+  const { username, displayName, email, password, source, userId, userImage } = req.body;
+
+  try {
+    const old = await sql.query`
+      SELECT userImage FROM Users WHERE userId = ${id}
+    `;
+    const oldImg = old.recordset[0]?.userImage;
+    let finalImage = oldImg;
+
+    // new file uploaded
+    if (req.file) finalImage = `/uploads/signatures/${req.file.filename}`;
+
+    // removed by user
+    if (!req.file && userImage === "") {
+      finalImage = null;
+      if (oldImg) deleteFile(oldImg);
+    }
+
+    let hashed = null;
+    if (password) hashed = await argon2.hash(password);
+
+    await sql.query`
+      UPDATE Users
+      SET 
+        username = ${username},
+        displayName = ${displayName},
+        email = ${email},
+        source = ${source},
+        userImage = ${finalImage},
+        updateUserId = ${userId},
+        updateDate = GETDATE(),
+        passwordHashed = COALESCE(${hashed}, passwordHashed)
+      WHERE userId = ${id}
+    `;
+
+    if (req.file && oldImg) deleteFile(oldImg);
+
+    res.status(200).json({ message: "User updated successfully" });
+  } catch (e) {
+    res.status(500).json({ message: "Update failed" });
+  }
+};
+
+// =====================================================
+// DELETE (Soft + delete image)
+// =====================================================
+exports.deleteUser = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    const old = await sql.query`
+      SELECT userImage FROM Users WHERE userId = ${id}
+    `;
+    const oldImg = old.recordset[0]?.userImage;
+
+    await sql.query`
+      UPDATE Users
+      SET isActive = 0,
+          deleteUserId = ${userId},
+          deleteDate = GETDATE()
+      WHERE userId = ${id}
+    `;
+
+    if (oldImg) deleteFile(oldImg);
+
+    res.status(200).json({ message: "User deleted successfully" });
+  } catch (e) {
+    res.status(500).json({ message: "Delete failed" });
+  }
+};
+
+// =====================================================
+// INACTIVE USERS
+// =====================================================
+exports.getInactiveUsers = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT 
+        userId, username, displayName, email, source, userImage
+      FROM Users
+      WHERE isActive = 0
+      ORDER BY userId DESC
+    `;
+
+    res.status(200).json({ records: result.recordset });
+  } catch (e) {
+    res.status(500).json({ message: "Server Error" });
+  }
+};
+
+// =====================================================
+// RESTORE USER
+// =====================================================
+exports.restoreUser = async (req, res) => {
+  const { id } = req.params;
+  const { userId } = req.body;
+
+  try {
+    await sql.query`
+      UPDATE Users
+      SET 
+        isActive = 1,
+        updateUserId = ${userId},
+        updateDate = GETDATE()
+      WHERE userId = ${id}
+    `;
+
+    res.status(200).json({ message: "User restored successfully" });
+  } catch (e) {
+    res.status(500).json({ message: "Restore failed" });
+  }
+};
+
+// =====================================================
+// SEARCH USERS
+// =====================================================
+exports.searchUsers = async (req, res) => {
+  const { q } = req.query;
+
+  try {
+    const result = await sql.query`
+      SELECT 
+        userId, username, displayName, email, source, userImage, insertDate, updateDate
+      FROM Users
+      WHERE 
+        isActive = 1 AND 
+        (
+          username LIKE '%' + ${q} + '%' OR
+          displayName LIKE '%' + ${q} + '%' OR
+          email LIKE '%' + ${q} + '%'
+        )
+      ORDER BY userId DESC
+    `;
+
+    res.status(200).json(result.recordset);
+  } catch (e) {
+    res.status(500).json({ message: "Search failed" });
+  }
+};

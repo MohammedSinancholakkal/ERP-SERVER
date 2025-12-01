@@ -1,13 +1,12 @@
-
-// middleware/multerConfig.js
+// middleware/employeeUpload.js
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 
-// Upload folder
-const uploadFolder = path.join(__dirname, "..", "uploads", "signatures");
+// employee images folder
+const uploadFolder = path.join(__dirname, "..", "uploads", "employees");
 
-// Create folder if not exists
+// create folder if not exists
 if (!fs.existsSync(uploadFolder)) {
   fs.mkdirSync(uploadFolder, { recursive: true });
 }
@@ -20,23 +19,20 @@ const storage = multer.diskStorage({
     const ext = path.extname(file.originalname);
     const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
     cb(null, name);
-  },
+  }
 });
 
-// Accept only images
 const fileFilter = (req, file, cb) => {
   if (!file.mimetype.startsWith("image/")) {
-    return cb(new Error("Only image files allowed"), false);
+    return cb(new Error("Only image uploads allowed"), false);
   }
   cb(null, true);
 };
 
-// Final multer export
-const uploadSignature = multer({
+const uploadEmployeePicture = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 4 * 1024 * 1024 }, // 4 MB
+  limits: { fileSize: 5 * 1024 * 1024 } // 5 MB
 });
 
-module.exports = uploadSignature;
-
+module.exports = uploadEmployeePicture;

@@ -1,3 +1,4 @@
+// controllers/locationController.js
 const sql = require("../db/dbConfig");
 
 // ================================
@@ -5,29 +6,26 @@ const sql = require("../db/dbConfig");
 // ================================
 exports.getAllLocations = async (req, res) => {
   try {
-    // Pagination values
     let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 25;
     let offset = (page - 1) * limit;
 
-    // Count total active records
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
       FROM Locations
       WHERE IsActive = 1
     `;
 
-    // Paginated query
     const result = await sql.query`
       SELECT 
         L.Id,
         L.Name,
         L.CountryId,
-        C.name AS CountryName,
+        C.Name AS CountryName,
         L.StateId,
-        S.name AS StateName,
+        S.Name AS StateName,
         L.CityId,
-        CI.name AS CityName,
+        CI.Name AS CityName,
         L.Address,
         L.Latitude,
         L.Longitude,
@@ -36,9 +34,9 @@ exports.getAllLocations = async (req, res) => {
         L.UpdateDate,
         L.UpdateUserId
       FROM Locations L
-      LEFT JOIN Countries C ON L.CountryId = C.id
-      LEFT JOIN States S ON L.StateId = S.id
-      LEFT JOIN Cities CI ON L.CityId = CI.id
+      LEFT JOIN Countries C ON L.CountryId = C.Id
+      LEFT JOIN States S ON L.StateId = S.Id
+      LEFT JOIN Cities CI ON L.CityId = CI.Id
       WHERE L.IsActive = 1
       ORDER BY L.Id DESC
       OFFSET ${offset} ROWS
@@ -55,7 +53,6 @@ exports.getAllLocations = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
-
 
 // ================================
 // ADD LOCATION
@@ -80,6 +77,7 @@ exports.addLocation = async (req, res) => {
     `;
 
     res.status(201).json({ message: "Location added successfully" });
+
   } catch (error) {
     console.log("ADD LOCATION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -116,6 +114,7 @@ exports.updateLocation = async (req, res) => {
     `;
 
     res.status(200).json({ message: "Location updated successfully" });
+
   } catch (error) {
     console.log("UPDATE LOCATION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -123,7 +122,7 @@ exports.updateLocation = async (req, res) => {
 };
 
 // ================================
-// SOFT DELETE
+// SOFT DELETE LOCATION
 // ================================
 exports.deleteLocation = async (req, res) => {
   const { id } = req.params;
@@ -139,6 +138,7 @@ exports.deleteLocation = async (req, res) => {
     `;
 
     res.status(200).json({ message: "Location deleted successfully" });
+
   } catch (error) {
     console.log("DELETE LOCATION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -146,7 +146,7 @@ exports.deleteLocation = async (req, res) => {
 };
 
 // ================================
-// SEARCH
+// SEARCH LOCATIONS
 // ================================
 exports.searchLocations = async (req, res) => {
   const { q } = req.query;
@@ -156,28 +156,30 @@ exports.searchLocations = async (req, res) => {
       SELECT 
         L.Id,
         L.Name,
-        C.name AS CountryName,
-        S.name AS StateName,
-        CI.name AS CityName
+        C.Name AS CountryName,
+        S.Name AS StateName,
+        CI.Name AS CityName
       FROM Locations L
-      LEFT JOIN Countries C ON L.CountryId = C.id
-      LEFT JOIN States S ON L.StateId = S.id
-      LEFT JOIN Cities CI ON L.CityId = CI.id
+      LEFT JOIN Countries C ON L.CountryId = C.Id
+      LEFT JOIN States S ON L.StateId = S.Id
+      LEFT JOIN Cities CI ON L.CityId = CI.Id
       WHERE L.IsActive = 1
-        AND (L.Name LIKE '%' + ${q} + '%' 
-             OR C.name LIKE '%' + ${q} + '%' 
-             OR S.name LIKE '%' + ${q} + '%' 
-             OR CI.name LIKE '%' + ${q} + '%')
+        AND (
+            L.Name LIKE '%' + ${q} + '%' OR
+            C.Name LIKE '%' + ${q} + '%' OR
+            S.Name LIKE '%' + ${q} + '%' OR
+            CI.Name LIKE '%' + ${q} + '%'
+        )
       ORDER BY L.Id DESC
     `;
 
     res.status(200).json(result.recordset);
+
   } catch (error) {
     console.log("SEARCH LOCATION ERROR:", error);
     res.status(500).json({ message: "Search Error" });
   }
 };
-
 
 // ================================
 // GET INACTIVE LOCATIONS
@@ -189,11 +191,11 @@ exports.getInactiveLocations = async (req, res) => {
         L.Id,
         L.Name,
         L.CountryId,
-        C.name AS CountryName,
+        C.Name AS CountryName,
         L.StateId,
-        S.name AS StateName,
+        S.Name AS StateName,
         L.CityId,
-        CI.name AS CityName,
+        CI.Name AS CityName,
         L.Address,
         L.Latitude,
         L.Longitude,
@@ -202,23 +204,23 @@ exports.getInactiveLocations = async (req, res) => {
         L.UpdateDate,
         L.UpdateUserId,
         L.DeleteDate,
-        L.DeleteUserId
+        L.DeleteUserId,
+        L.IsActive
       FROM Locations L
-      LEFT JOIN Countries C ON L.CountryId = C.id
-      LEFT JOIN States S ON L.StateId = S.id
-      LEFT JOIN Cities CI ON L.CityId = CI.id
+      LEFT JOIN Countries C ON L.CountryId = C.Id
+      LEFT JOIN States S ON L.StateId = S.Id
+      LEFT JOIN Cities CI ON L.CityId = CI.Id
       WHERE L.IsActive = 0
       ORDER BY L.Id DESC
     `;
 
-    res.status(200).json({ records: result.recordset });
+    res.status(200).json(result.recordset);
+
   } catch (error) {
     console.log("GET INACTIVE LOCATIONS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
-
-
 
 // ================================
 // RESTORE LOCATION
@@ -242,6 +244,7 @@ exports.restoreLocation = async (req, res) => {
     `;
 
     res.status(200).json({ message: "Location restored successfully" });
+
   } catch (error) {
     console.log("RESTORE LOCATION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
