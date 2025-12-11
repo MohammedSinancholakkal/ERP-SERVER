@@ -7,6 +7,12 @@ exports.createEmployee = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {  
+    // Parse JSON data from FormData
+    let parsedBody = req.body;
+    if (req.body.data) {
+      parsedBody = JSON.parse(req.body.data);
+    }
+
     const {
       firstName,
       lastName,
@@ -16,7 +22,7 @@ exports.createEmployee = async (req, res) => {
       hourlyRate,
       salary,
       bloodGroup,
-      phone,
+      phone, 
       email,
       countryId,
       stateId,
@@ -30,7 +36,7 @@ exports.createEmployee = async (req, res) => {
       userId,
       incomes,
       deductions
-    } = req.body;
+    } = parsedBody;
 
     // picture
     let pictureUrl = null;
@@ -55,13 +61,13 @@ exports.createEmployee = async (req, res) => {
       OUTPUT inserted.Id
       VALUES
       (
-        '${firstName}', '${lastName}', ${designationId}, ${departmentId}, '${rateType}',
-        ${hourlyRate || 0}, ${salary || 0}, '${bloodGroup || ""}', '${phone}', '${email}',
+        '${firstName}', '${lastName}', ${designationId || 'NULL'}, ${departmentId || 'NULL'}, '${rateType || ''}',
+        ${hourlyRate || 0}, ${salary || 0}, '${bloodGroup || ""}', '${phone || ''}', '${email || ''}',
         '${pictureUrl || ""}',
-        ${countryId}, ${stateId}, ${cityId}, ${regionId}, ${territoryId},
-        '${zipCode}', '${address}',
-        ${payrollBankId}, '${payrollBankAccount}',
-        ${userId}, GETDATE(), ${userId}, 1
+        ${countryId || 'NULL'}, ${stateId || 'NULL'}, ${cityId || 'NULL'}, ${regionId || 'NULL'}, ${territoryId || 'NULL'},
+        '${zipCode || ''}', '${address || ''}',
+        ${payrollBankId || 'NULL'}, '${payrollBankAccount || ''}',
+        ${userId || 1}, GETDATE(), ${userId || 1}, 1
       )
     `);
 
@@ -78,14 +84,14 @@ exports.createEmployee = async (req, res) => {
           VALUES
           (${employeeId}, ${inc.typeId}, '${inc.description || ""}', ${inc.amount},
             GETDATE(), ${userId}, 1)
-        `);
+        `); 
       }
     }
 
     // ----------------------------------------------------
     // INSERT DEDUCTIONS
     // ----------------------------------------------------
-    if (Array.isArray(deductions)) {
+    if (Array.isArray(deductions)) {  
       for (let ded of deductions) {
         await transaction.request().query(`
           INSERT INTO EmployeeDeduction
@@ -121,7 +127,7 @@ exports.getAllEmployees = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
-
+  
     // Count total
     const total = await sql.query`
       SELECT COUNT(*) AS Total
@@ -130,24 +136,61 @@ exports.getAllEmployees = async (req, res) => {
     `;
 
     // Main list
-    const employees = await sql.query`
-      SELECT 
-        e.Id,
-        e.FirstName,
-        e.LastName,
-        e.Email,
-        e.Phone,
-        e.BloodGroup,
-        e.BasicSalary,
-        dsg.designation AS Designation,
-        dept.department AS Department
-      FROM Employees e
-      LEFT JOIN Designations dsg ON e.DesignationId = dsg.id
-      LEFT JOIN Departments dept ON e.DepartmentId = dept.id
-      WHERE e.IsActive = 1
-      ORDER BY e.Id DESC
-      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
-    `;
+    // const employees = await sql.query`
+    //   SELECT 
+    //     e.Id,
+    //     e.FirstName,
+    //     e.LastName,
+    //     e.Email,
+    //     e.Phone,
+    //     e.BloodGroup,
+    //     e.BasicSalary,
+    //     dsg.designation AS Designation,
+    //     dept.department AS Department
+    //   FROM Employees e
+    //   LEFT JOIN Designations dsg ON e.DesignationId = dsg.id
+    //   LEFT JOIN Departments dept ON e.DepartmentId = dept.id
+    //   WHERE e.IsActive = 1
+    //   ORDER BY e.Id DESC
+    //   OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+    // `;
+
+const employees = await sql.query`
+  SELECT 
+    e.Id,
+    e.FirstName,
+    e.LastName,
+
+    e.RateType,
+    e.HoureRateSalary,
+    e.ZipCode,
+    e.Address,
+    e.UserId,
+    e.RegionId,
+    e.TerritoryId,
+
+    e.Email,
+    e.Phone,
+    e.BloodGroup,
+    e.BasicSalary,
+
+    e.CountryId,
+    e.StateId,
+    e.CityId,
+
+    -- ✅ ✅ ✅ FINAL CORRECT COLUMN BINDING
+    dsg.Designation AS designation,
+    dept.Department AS department
+
+  FROM Employees e
+  LEFT JOIN Designations dsg ON e.DesignationId = dsg.Id
+  LEFT JOIN Departments dept ON e.DepartmentId = dept.Id
+
+  WHERE e.IsActive = 1
+  ORDER BY e.Id DESC
+  OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+`;
+
 
     res.status(200).json({
       total: total.recordset[0].Total,
@@ -158,15 +201,18 @@ exports.getAllEmployees = async (req, res) => {
     res.status(500).json({ message: "Error loading employees" });
   }
 };
-
   
+
 // ======================================================================
 // GET SINGLE EMPLOYEE (with incomes + deductions)
 // ======================================================================
+
+
 exports.getEmployeeById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // ✅ MAIN EMPLOYEE
     const emp = await sql.query`
       SELECT *
       FROM Employees
@@ -177,19 +223,32 @@ exports.getEmployeeById = async (req, res) => {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-    const incomes = await sql.query`
-      SELECT EI.Id, EI.IncomeId, I.name AS IncomeName, EI.Amount, EI.Description
-      FROM EmployeeIncome EI
-      LEFT JOIN Incomes I ON EI.IncomeId = I.id
-      WHERE EI.EmployeeId = ${id} AND EI.IsActive = 1
-    `;
+const incomes = await sql.query`
+  SELECT 
+    EI.Id,
+    EI.IncomeId,
+    I.IncomeName AS IncomeName,   -- ✅ correct for your Incomes table
+    EI.Amount,
+    EI.Description
+  FROM EmployeeIncome EI
+  LEFT JOIN Incomes I ON EI.IncomeId = I.Id
+  WHERE EI.EmployeeId = ${id}
+    AND EI.IsActive = 1
+`;
 
-    const deductions = await sql.query`
-      SELECT ED.Id, ED.DeductionId, D.name AS DeductionName, ED.Amount, ED.Description
-      FROM EmployeeDeduction ED
-      LEFT JOIN Deductions D ON ED.DeductionId = D.id
-      WHERE ED.EmployeeId = ${id} AND ED.IsActive = 1
-    `;
+const deductions = await sql.query`
+  SELECT 
+    ED.Id,
+    ED.DeductionId,
+    D.Name AS DeductionName,     -- ✅ correct for your Deductions table
+    ED.Amount,
+    ED.Description
+  FROM EmployeeDeduction ED
+  LEFT JOIN Deductions D ON ED.DeductionId = D.Id
+  WHERE ED.EmployeeId = ${id}
+    AND ED.IsActive = 1
+`;
+
 
     res.status(200).json({
       ...emp.recordset[0],
@@ -202,6 +261,7 @@ exports.getEmployeeById = async (req, res) => {
     res.status(500).json({ message: "Error loading employee" });
   }
 };
+
 
 
 // ======================================================================
@@ -268,42 +328,48 @@ exports.updateEmployee = async (req, res) => {
       deductions
     } = parsedBody;
 
-    // new picture if uploaded
+    // ✅ NEW PICTURE IF UPLOADED
     let newPicture = null;
     if (req.file) {
       newPicture = `/uploads/employees/${req.file.filename}`;
     }
 
+    // ✅ ✅ ✅ ONLY UPDATE Picture IF A NEW IMAGE EXISTS
+    let pictureSet = "";
+    if (newPicture) {
+      pictureSet = `Picture = '${newPicture}',`;
+    }
+
     await transaction.begin();
 
     // ----------------------------------------------------
-    // UPDATE EMPLOYEE MAIN TABLE
+    // ✅ FIXED UPDATE EMPLOYEE MAIN TABLE
     // ----------------------------------------------------
     await transaction.request().query(`
       UPDATE Employees
       SET
         FirstName = '${firstName}',
         LastName = '${lastName}',
-        DesignationId = ${designationId},
-        DepartmentId = ${departmentId},
-        RateType = '${rateType}',
+        DesignationId = ${designationId || 'NULL'},
+        DepartmentId = ${departmentId || 'NULL'},
+        RateType = '${rateType || ''}',
         HoureRateSalary = ${hourlyRate || 0},
         BasicSalary = ${salary || 0},
-        BloodGroup = '${bloodGroup}',
-        Phone = '${phone}',
-        Email = '${email}',
-        Picture = '${newPicture || ""}',
-        CountryId = ${countryId},
-        StateId = ${stateId},
-        CityId = ${cityId},
-        RegionId = ${regionId},
-        TerritoryId = ${territoryId},
-        ZipCode = '${zipCode}',
-        Address = '${address}',
-        PayrollBankId = ${payrollBankId},
-        BankAccountForPayroll = '${payrollBankAccount}',
+        BloodGroup = '${bloodGroup || ''}',
+        Phone = '${phone || ''}',
+        Email = '${email || ''}',
+        ${pictureSet}
+        CountryId = ${countryId || 'NULL'},
+        StateId = ${stateId || 'NULL'},
+        CityId = ${cityId || 'NULL'},
+        RegionId = ${regionId || 'NULL'},
+        TerritoryId = ${territoryId || 'NULL'},
+        ZipCode = '${zipCode || ''}',
+        Address = '${address || ''}',
+        PayrollBankId = ${payrollBankId || 'NULL'},
+        BankAccountForPayroll = '${payrollBankAccount || ''}',
         UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
+        UpdateUserId = ${userId || 1}
       WHERE Id = ${employeeId}
     `);
 
@@ -368,3 +434,4 @@ exports.updateEmployee = async (req, res) => {
     res.status(500).json({ message: "Error updating employee" });
   }
 };
+

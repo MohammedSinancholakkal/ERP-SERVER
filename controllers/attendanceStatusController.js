@@ -7,7 +7,7 @@ exports.getAllAttendanceStatuses = async (req, res) => {
   try {
     // Extract pagination params
     let page = parseInt(req.query.page) || 1;
-    let limit = parseInt(req.query.limit) || 25;
+    let limit = parseInt(req.query.limit) || 25;   
     let offset = (page - 1) * limit;
 
     // Count total active records

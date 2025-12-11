@@ -38,6 +38,12 @@ const rolesRoutes = require("./routes/rolesRoutes");
 const currencyRoutes = require("./routes/currencyRoutes"); 
 const languageRoutes = require("./routes/languageRoutes");
 const expenseRoutes = require("./routes/expenseRoutes");
+const settingsRoutes = require("./routes/settingsRoutes");
+const suppliersRoutes = require("./routes/suppliersRoutes");
+const customersRoutes = require("./routes/customersRoutes");
+const meetingsRoutes = require("./routes/meetingsRoutes");
+const attendanceRoutes = require("./routes/attendanceRoutes");
+
 
 
 
@@ -62,6 +68,7 @@ ERP_SERVER.use("/api/banks", bankRoutes);
 
 // 🟢 OTHER ROUTES
 ERP_SERVER.use("/api/auth", userRoutes);
+ERP_SERVER.use("/api/users", userRoutes);
 ERP_SERVER.use("/api/countries", countryRoutes);
 ERP_SERVER.use("/api/cities", cityRoutes);
 ERP_SERVER.use("/api/states", stateRoutes);
@@ -94,6 +101,11 @@ ERP_SERVER.use("/api/roles", rolesRoutes);
 ERP_SERVER.use("/api/currencies", currencyRoutes);
 ERP_SERVER.use("/api/languages", languageRoutes);
 ERP_SERVER.use("/api/expenses", expenseRoutes);
+ERP_SERVER.use("/api/settings", settingsRoutes);
+ERP_SERVER.use("/api/suppliers", suppliersRoutes);
+ERP_SERVER.use("/api/customers", customersRoutes);
+ERP_SERVER.use("/api/meetings", meetingsRoutes);
+ERP_SERVER.use("/api/attendance", attendanceRoutes);
 
 
 
@@ -102,8 +114,6 @@ ERP_SERVER.use("/api/expenses", expenseRoutes);
 
 
 
-
-// const PORT = process.env.PORT;
 // const PORT = process.env.PORT || 5000; 
 const PORT = process.env.PORT;
 

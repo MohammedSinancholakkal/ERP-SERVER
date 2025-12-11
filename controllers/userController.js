@@ -3,6 +3,8 @@ const jwt = require("jsonwebtoken");
 const argon2 = require("argon2");
 const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
+const path = require("path");
+const fs = require("fs");
 
 exports.Login = async (req, res) => {
   console.log("Inside SuperAdmin Login");
@@ -197,7 +199,7 @@ exports.requestPasswordReset = async (req, res) => {
   }
 };
 
-
+ 
 
 // reset password============================
 
@@ -260,14 +262,14 @@ exports.getAllUsers = async (req, res) => {
     let offset = (page - 1) * limit;
 
     const total = await sql.query`
-      SELECT COUNT(*) AS Total FROM Users WHERE isActive = 1
+      SELECT COUNT(*) AS Total FROM Users WHERE isActive = 1 AND username != 'SuperAdmin'
     `;
 
     const result = await sql.query`
       SELECT 
         userId, username, displayName, email, source, userImage, insertDate, updateDate
       FROM Users
-      WHERE isActive = 1
+      WHERE isActive = 1 AND username != 'SuperAdmin'
       ORDER BY userId DESC
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
     `;
@@ -298,20 +300,23 @@ exports.addUser = async (req, res) => {
 
   try {
     const hashed = await argon2.hash(password);
+    const salt = crypto.randomBytes(16).toString("hex"); // Generate random salt
+    const insertUserId = parseInt(userId) || 1; 
 
     await sql.query`
       INSERT INTO Users
-      (username, displayName, email, passwordHashed, userImage, source, insertUserId)
+      (username, displayName, email, passwordHashed, passwordSalt, userImage, source, insertUserId)
       VALUES
-      (${username}, ${displayName}, ${email}, ${hashed}, ${imgPath}, ${source}, ${userId})
+      (${username}, ${displayName}, ${email}, ${hashed}, ${salt}, ${imgPath}, ${source}, ${insertUserId})
     `;
 
     res.status(201).json({ message: "User added successfully" });
   } catch (e) {
+    console.error("ADD USER ERROR:", e); 
     if (imgPath) deleteFile(imgPath);
-    res.status(500).json({ message: "Server Error" });
+    res.status(500).json({ message: "Server Error", error: e.message }); 
   }
-};
+};  
 
 // =====================================================
 // UPDATE USER
@@ -321,23 +326,30 @@ exports.updateUser = async (req, res) => {
   const { username, displayName, email, password, source, userId, userImage } = req.body;
 
   try {
-    const old = await sql.query`
+    const old = await sql.query`  
       SELECT userImage FROM Users WHERE userId = ${id}
     `;
-    const oldImg = old.recordset[0]?.userImage;
+    const oldImg = old.recordset[0]?.userImage;     
     let finalImage = oldImg;
 
     // new file uploaded
     if (req.file) finalImage = `/uploads/signatures/${req.file.filename}`;
 
     // removed by user
-    if (!req.file && userImage === "") {
+    if (!req.file && userImage === "") {  
       finalImage = null;
       if (oldImg) deleteFile(oldImg);
     }
 
     let hashed = null;
-    if (password) hashed = await argon2.hash(password);
+    let salt = null;
+
+    if (password) {
+      hashed = await argon2.hash(password);
+      salt = crypto.randomBytes(16).toString("hex");
+    }
+
+    const updateUserId = parseInt(userId) || 1;
 
     await sql.query`
       UPDATE Users
@@ -347,9 +359,9 @@ exports.updateUser = async (req, res) => {
         email = ${email},
         source = ${source},
         userImage = ${finalImage},
-        updateUserId = ${userId},
         updateDate = GETDATE(),
-        passwordHashed = COALESCE(${hashed}, passwordHashed)
+        passwordHashed = COALESCE(${hashed}, passwordHashed),
+        passwordSalt = COALESCE(${salt}, passwordSalt)
       WHERE userId = ${id}
     `;
 
@@ -357,12 +369,13 @@ exports.updateUser = async (req, res) => {
 
     res.status(200).json({ message: "User updated successfully" });
   } catch (e) {
-    res.status(500).json({ message: "Update failed" });
+    console.error("UPDATE USER ERROR:", e);
+    res.status(500).json({ message: "Update failed", error: e.message });
   }
 };
 
 // =====================================================
-// DELETE (Soft + delete image)
+// DELETE (Soft + delete image)   
 // =====================================================
 exports.deleteUser = async (req, res) => {
   const { id } = req.params;
@@ -386,7 +399,7 @@ exports.deleteUser = async (req, res) => {
 
     res.status(200).json({ message: "User deleted successfully" });
   } catch (e) {
-    res.status(500).json({ message: "Delete failed" });
+    res.status(500).json({ message: "Delete failed" }); 
   }
 };
 
@@ -421,7 +434,6 @@ exports.restoreUser = async (req, res) => {
       UPDATE Users
       SET 
         isActive = 1,
-        updateUserId = ${userId},
         updateDate = GETDATE()
       WHERE userId = ${id}
     `;
