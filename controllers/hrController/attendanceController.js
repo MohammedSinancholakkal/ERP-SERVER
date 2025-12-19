@@ -15,7 +15,7 @@ exports.getAllAttendance = async (req, res) => {
       FROM Attendance
       WHERE IsActive = 1
     `;
-
+  
     // Paginated List
     const result = await sql.query`
       SELECT

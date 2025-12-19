@@ -7,7 +7,7 @@ exports.getAllAgendaItemTypes = async (req, res) => {
   try {
     // Pagination inputs
     let page = parseInt(req.query.page) || 1;
-    let limit = parseInt(req.query.limit) || 25;
+    let limit = parseInt(req.query.limit) || 25;    
     let offset = (page - 1) * limit;
 
     // Count total active records
@@ -58,7 +58,7 @@ exports.addAgendaItemType = async (req, res) => {
     await sql.query`
       INSERT INTO AgendaItemTypes (Name, InsertUserId)
       VALUES (${name.trim()}, ${userId})
-    `;
+    `;  
 
     res.status(201).json({ message: "Agenda item type added successfully" });
   } catch (error) {

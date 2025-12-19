@@ -5,32 +5,30 @@ const sql = require("../../db/dbConfig");
 // =============================================================
 exports.getAllMeetings = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 25;
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    // Total Count
-    const totalResult = await sql.query`  
-      SELECT COUNT(*) AS Total
-      FROM Meetings
-      WHERE IsActive = 1
+    const totalResult = await sql.query`
+      SELECT COUNT(DISTINCT Id) AS Total
+      FROM Meetings  
+      WHERE IsActive = 1  
     `;
 
-    // Paginated List
     const result = await sql.query`
-      SELECT
-        Id AS id,
-        MeetingName AS meetingName,
-        MeetingType AS meetingType,
-        StartDate AS startDate,
-        EndDate AS endDate,
-        Department AS department,
-        Location AS location,
-        OrganizedBy AS organizedBy,
-        Reporter AS reporter
-      FROM Meetings
-      WHERE IsActive = 1
-      ORDER BY Id DESC
+      SELECT DISTINCT    
+        m.Id AS id,
+        m.MeetingName AS meetingName,
+        m.MeetingType AS meetingType,
+        m.StartDate AS startDate,
+        m.EndDate AS endDate,
+        m.Department AS department,
+        m.Location AS location,
+        m.OrganizedBy AS organizedBy,
+        m.Reporter AS reporter
+      FROM Meetings m
+      WHERE m.IsActive = 1
+      ORDER BY m.Id DESC
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
@@ -47,43 +45,6 @@ exports.getAllMeetings = async (req, res) => {
 };
 
 
-// =============================================================
-// ADD MEETING
-// =============================================================
-// exports.addMeeting = async (req, res) => {
-//   const {
-//     meetingName,
-//     meetingType,
-//     startDate,
-//     endDate,
-//     department,
-//     location,
-//     organizedBy,
-//     reporter,
-//     userId
-//   } = req.body;
-
-//   try {
-//     await sql.query`
-//       INSERT INTO Meetings (
-//         MeetingName, MeetingType, StartDate, EndDate,
-//         Department, Location, OrganizedBy, Reporter,
-//         InsertUserId
-//       )
-//       VALUES (
-//         ${meetingName}, ${meetingType}, ${startDate}, ${endDate},
-//         ${department}, ${location}, ${organizedBy}, ${reporter},
-//         ${userId}
-//       )
-//     `;
-
-//     res.status(200).json({ message: "Meeting added successfully" });
-
-//   } catch (error) {
-//     console.error("ADD MEETING ERROR:", error);
-//     res.status(500).json({ message: "Server error" });
-//   }
-// };
 
 // =============================================================
 // ADD MEETING (WITH ATTENDEES)
@@ -172,7 +133,7 @@ exports.addMeeting = async (req, res) => {
     });
   }
 };
-
+  
 
 
 // =============================================================
@@ -189,11 +150,18 @@ exports.updateMeeting = async (req, res) => {
     location,
     organizedBy,
     reporter,
+    attendees, // ⬅ attendees array coming from frontend
     userId
   } = req.body;
 
+  const transaction = new sql.Transaction();
+
   try {
-    await sql.query`
+    await transaction.begin();
+    const request = new sql.Request(transaction);
+
+    // 1️⃣ UPDATE MEETING MASTER
+    await request.query`
       UPDATE Meetings
       SET
         MeetingName = ${meetingName},
@@ -209,11 +177,45 @@ exports.updateMeeting = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    // 2️⃣ DELETE EXISTING ATTENDEES
+    await request.query`
+      DELETE FROM MeetingAttendees
+      WHERE Meeting = ${id}
+    `;
+
+    // 3️⃣ INSERT NEW ATTENDEES
+    if (Array.isArray(attendees)) {
+      for (const at of attendees) {
+        await request.query`
+          INSERT INTO MeetingAttendees (
+            AttendeeType,
+            AttendanceStatus,
+            Attendee,
+            Meeting,
+            InsertDate,
+            InsertUserId,
+            IsActive
+          )
+          VALUES (
+            ${at.attendeeTypeId},
+            ${at.attendanceStatusId},
+            ${at.attendeeId},
+            ${id},
+            GETDATE(),
+            ${userId},
+            1
+          )
+        `;
+      }
+    }
+
+    await transaction.commit();
     res.status(200).json({ message: "Meeting updated successfully" });
 
   } catch (error) {
     console.error("UPDATE MEETING ERROR:", error);
-    res.status(500).json({ message: "Server error" });
+    await transaction.rollback();
+    res.status(500).json({ message: "Server error while updating meeting" });
   }
 };
 
@@ -253,23 +255,23 @@ exports.searchMeetings = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id AS id,
-        MeetingName AS meetingName,
-        MeetingType AS meetingType,
-        StartDate AS startDate,
-        Department AS department,
-        OrganizedBy AS organizedBy,
-        Reporter AS reporter
-      FROM Meetings
-      WHERE 
-        IsActive = 1 AND (
-          MeetingName LIKE '%' + ${q} + '%' OR
-          MeetingType LIKE '%' + ${q} + '%' OR
-          Department LIKE '%' + ${q} + '%' OR
-          OrganizedBy LIKE '%' + ${q} + '%' OR
-          Reporter LIKE '%' + ${q} + '%'
+        m.Id AS id,
+        m.MeetingName AS meetingName,
+        m.MeetingType AS meetingType,
+        m.StartDate AS startDate,
+        m.Department AS department,
+        m.OrganizedBy AS organizedBy,
+        m.Reporter AS reporter
+      FROM Meetings m
+      WHERE m.IsActive = 1
+        AND (
+          m.MeetingName LIKE '%' + ${q} + '%' OR
+          m.MeetingType LIKE '%' + ${q} + '%' OR
+          m.Department LIKE '%' + ${q} + '%' OR
+          m.OrganizedBy LIKE '%' + ${q} + '%' OR
+          m.Reporter LIKE '%' + ${q} + '%'
         )
-      ORDER BY Id DESC
+      ORDER BY m.Id DESC
     `;
 
     res.status(200).json(result.recordset);
@@ -279,6 +281,7 @@ exports.searchMeetings = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
+
 
 
 // =============================================================
@@ -311,6 +314,7 @@ exports.getInactiveMeetings = async (req, res) => {
 };
 
 
+
 // =============================================================
 // RESTORE MEETING
 // =============================================================
@@ -338,26 +342,57 @@ exports.restoreMeeting = async (req, res) => {
 
 
 
-
 exports.getMeetingById = async (req, res) => {
   const { id } = req.params;
 
   try {
-    const meeting = await sql.query`
-      SELECT *
+    // =====================
+    // MEETING MASTER
+    // =====================
+    const meetingResult = await sql.query`
+      SELECT 
+        Id AS id,
+        MeetingName AS meetingName,
+        MeetingType AS meetingType,
+        StartDate AS startDate,
+        EndDate AS endDate,
+        Department AS department,
+        Location AS location,
+        OrganizedBy AS organizedBy,
+        Reporter AS reporter
       FROM Meetings
       WHERE Id = ${id}
     `;
 
-    const attendees = await sql.query`
-      SELECT *
-      FROM MeetingAttendees
-      WHERE Meeting = ${id} AND IsActive = 1
-    `;  
+    // =====================
+    // ATTENDEES (FIXED JOINS)
+    // =====================
+    const attendeesResult = await sql.query`
+      SELECT
+        ma.Id,
+        ma.Attendee AS attendeeId,
+        ma.AttendeeType AS attendeeTypeId,
+        ma.AttendanceStatus AS attendanceStatusId,
+        ma.Meeting,
+        e.Id AS employeeId,
+        ISNULL(e.FirstName, '') + ' ' + ISNULL(e.LastName, '') AS attendeeName,
+        ISNULL(d.Department, '') AS departmentName,
+        ISNULL(desig.Designation, '') AS designationName,
+        ISNULL(at.Name, '') AS attendeeTypeName,
+        ISNULL(as_status.Name, '') AS attendanceStatusName
+      FROM MeetingAttendees ma
+      LEFT JOIN Employees e ON ma.Attendee = e.Id
+      LEFT JOIN Departments d ON e.DepartmentId = d.Id
+      LEFT JOIN Designations desig ON e.DesignationId = desig.Id
+      LEFT JOIN AttendeeTypes at ON ma.AttendeeType = at.Id
+      LEFT JOIN AttendanceStatuses as_status ON ma.AttendanceStatus = as_status.Id
+      WHERE ma.Meeting = ${id}
+        AND ma.IsActive = 1
+    `;
 
     res.status(200).json({
-      meeting: meeting.recordset[0],
-      attendees: attendees.recordset  
+      meeting: meetingResult.recordset[0],
+      attendees: attendeesResult.recordset
     });
 
   } catch (error) {
@@ -365,3 +400,5 @@ exports.getMeetingById = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
+

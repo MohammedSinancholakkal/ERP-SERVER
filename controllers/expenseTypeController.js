@@ -13,7 +13,7 @@ exports.getAllExpenseTypes = async (req, res) => {
       SELECT COUNT(*) AS Total 
       FROM ExpenseTypes 
       WHERE isActive = 1
-    `;
+    `;  
 
     const result = await sql.query`
       SELECT 

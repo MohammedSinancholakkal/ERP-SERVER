@@ -9,13 +9,13 @@ exports.getAllDepartments = async (req, res) => {
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    // TOTAL COUNT
-    const totalResult = await sql.query`
+    // TOTAL COUNT  
+    const totalResult = await sql.query`  
       SELECT COUNT(*) AS Total
       FROM Departments
       WHERE IsActive = 1
     `;
-
+  
     // PAGINATED LIST WITH PARENT NAME + PARENT ID
     const result = await sql.query`
       SELECT 

@@ -29,7 +29,7 @@ const unitsRoutes = require("./routes/unitsRoutes");
 const brandsRoutes = require("./routes/brandsRoutes");
 const categoriesRoutes = require("./routes/categoriesRoutes");
 const productsRoutes = require("./routes/productsRoutes");
-const stocksRoutes = require("./routes/stocksRoutes");
+const stocksRoutes = require("./routes/stocksRoutes"); 
 const damagedProductsRoutes = require("./routes/damagedProductsRoutes");
 const departmentsRoutes = require("./routes/departmentsRoutes");
 const designationsRoutes = require("./routes/designationsRoutes");
@@ -43,6 +43,13 @@ const suppliersRoutes = require("./routes/suppliersRoutes");
 const customersRoutes = require("./routes/customersRoutes");
 const meetingsRoutes = require("./routes/meetingsRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
+const purchaseRoutes = require("./routes/purchaseRoutes");
+const goodsReceiptRoutes = require("./routes/goodsReceiptRoutes");
+const goodsIssueRoutes = require("./routes/goodsIssueRoutes");
+const salesRoutes = require("./routes/salesRoutes");
+const quotationRoutes = require("./routes/quotationRoutes");
+const serviceInvoiceRoutes = require("./routes/serviceInvoiceRoutes");
+const payrollRoutes = require("./routes/payrollRoutes");
 
 
 
@@ -55,9 +62,54 @@ require('./db/dbConfig');
 
 const ERP_SERVER = express();
 
+
+/* ============================================================
+   DYNAMIC FAVICON (IMPORTANT)
+============================================================ */
+ERP_SERVER.get("/favicon.ico", async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT TOP 1 FaviconPath
+      FROM Settings
+      WHERE IsActive = 1
+      ORDER BY Id DESC
+    `;
+
+    if (
+      result.recordset.length > 0 &&
+      result.recordset[0].FaviconPath
+    ) {
+      const faviconPath = path.join(
+        __dirname,
+        result.recordset[0].FaviconPath
+      );
+
+      return res.sendFile(faviconPath);
+    }
+
+    // fallback favicon
+    return res.sendFile(
+      path.join(__dirname, "public", "favicon.ico")
+    );
+  } catch (error) {
+    console.error("FAVICON ERROR:", error);
+
+    // fallback if DB fails
+    return res.sendFile(
+      path.join(__dirname, "public", "favicon.ico")
+    );
+  }
+});
+
 // MIDDLEWARES
 ERP_SERVER.use(cors());
 ERP_SERVER.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+ERP_SERVER.use(
+  "/public",
+  express.static(path.join(__dirname, "public"))
+);
+
 
 // 🟢 JSON PARSING MUST BE BEFORE ALL ROUTES
 ERP_SERVER.use(express.json({ limit: "20mb" }));
@@ -106,11 +158,13 @@ ERP_SERVER.use("/api/suppliers", suppliersRoutes);
 ERP_SERVER.use("/api/customers", customersRoutes);
 ERP_SERVER.use("/api/meetings", meetingsRoutes);
 ERP_SERVER.use("/api/attendance", attendanceRoutes);
-
-
-
-
-
+ERP_SERVER.use("/api/purchases", purchaseRoutes);
+ERP_SERVER.use("/api/goods-receipts", goodsReceiptRoutes);
+ERP_SERVER.use("/api/goods-issues", goodsIssueRoutes);
+ERP_SERVER.use("/api/sales", salesRoutes); 
+ERP_SERVER.use("/api/quotations", quotationRoutes); 
+ERP_SERVER.use("/api/service-invoices", serviceInvoiceRoutes); 
+ERP_SERVER.use("/api/payrolls", payrollRoutes);
 
 
 

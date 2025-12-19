@@ -135,62 +135,36 @@ exports.getAllEmployees = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    // Main list
-    // const employees = await sql.query`
-    //   SELECT 
-    //     e.Id,
-    //     e.FirstName,
-    //     e.LastName,
-    //     e.Email,
-    //     e.Phone,
-    //     e.BloodGroup,
-    //     e.BasicSalary,
-    //     dsg.designation AS Designation,
-    //     dept.department AS Department
-    //   FROM Employees e
-    //   LEFT JOIN Designations dsg ON e.DesignationId = dsg.id
-    //   LEFT JOIN Departments dept ON e.DepartmentId = dept.id
-    //   WHERE e.IsActive = 1
-    //   ORDER BY e.Id DESC
-    //   OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
-    // `;
-
-const employees = await sql.query`
-  SELECT 
-    e.Id,
-    e.FirstName,
-    e.LastName,
-
-    e.RateType,
-    e.HoureRateSalary,
-    e.ZipCode,
-    e.Address,
-    e.UserId,
-    e.RegionId,
-    e.TerritoryId,
-
-    e.Email,
-    e.Phone,
-    e.BloodGroup,
-    e.BasicSalary,
-
-    e.CountryId,
-    e.StateId,
-    e.CityId,
-
-    -- ✅ ✅ ✅ FINAL CORRECT COLUMN BINDING
-    dsg.Designation AS designation,
-    dept.Department AS department
-
-  FROM Employees e
-  LEFT JOIN Designations dsg ON e.DesignationId = dsg.Id
-  LEFT JOIN Departments dept ON e.DepartmentId = dept.Id
-
-  WHERE e.IsActive = 1
-  ORDER BY e.Id DESC
-  OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
-`;
-
+    const employees = await sql.query`
+      SELECT 
+        e.Id,
+        e.FirstName,
+        e.LastName,
+        e.RateType,
+        e.HoureRateSalary,
+        e.ZipCode,
+        e.Address,
+        e.UserId,
+        e.RegionId,
+        e.TerritoryId,
+        e.Email,
+        e.Phone,
+        e.BloodGroup,
+        e.BasicSalary,
+        e.CountryId,
+        e.StateId,
+        e.CityId,
+        dsg.Designation AS designation,
+        dept.Department AS department,
+        (SELECT ISNULL(SUM(Amount), 0) FROM EmployeeIncome WHERE EmployeeId = e.Id AND IsActive = 1) AS TotalIncome,
+        (SELECT ISNULL(SUM(Amount), 0) FROM EmployeeDeduction WHERE EmployeeId = e.Id AND IsActive = 1) AS TotalDeduction
+      FROM Employees e
+      LEFT JOIN Designations dsg ON e.DesignationId = dsg.Id
+      LEFT JOIN Departments dept ON e.DepartmentId = dept.Id
+      WHERE e.IsActive = 1
+      ORDER BY e.Id DESC
+      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+    `;
 
     res.status(200).json({
       total: total.recordset[0].Total,
@@ -206,49 +180,46 @@ const employees = await sql.query`
 // ======================================================================
 // GET SINGLE EMPLOYEE (with incomes + deductions)
 // ======================================================================
-
-
 exports.getEmployeeById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    // ✅ MAIN EMPLOYEE
+    // ✅ MAIN EMPLOYEE (Allow inactive for viewing/restoring)
     const emp = await sql.query`
       SELECT *
       FROM Employees
-      WHERE Id = ${id} AND IsActive = 1
+      WHERE Id = ${id}
     `;
 
     if (emp.recordset.length === 0) {
       return res.status(404).json({ message: "Employee not found" });
     }
 
-const incomes = await sql.query`
-  SELECT 
-    EI.Id,
-    EI.IncomeId,
-    I.IncomeName AS IncomeName,   -- ✅ correct for your Incomes table
-    EI.Amount,
-    EI.Description
-  FROM EmployeeIncome EI
-  LEFT JOIN Incomes I ON EI.IncomeId = I.Id
-  WHERE EI.EmployeeId = ${id}
-    AND EI.IsActive = 1
-`;
+    const incomes = await sql.query`
+      SELECT 
+        EI.Id,
+        EI.IncomeId,
+        I.IncomeName AS IncomeName,
+        EI.Amount,
+        EI.Description
+      FROM EmployeeIncome EI
+      LEFT JOIN Incomes I ON EI.IncomeId = I.Id
+      WHERE EI.EmployeeId = ${id}
+        AND EI.IsActive = 1
+    `;
 
-const deductions = await sql.query`
-  SELECT 
-    ED.Id,
-    ED.DeductionId,
-    D.Name AS DeductionName,     -- ✅ correct for your Deductions table
-    ED.Amount,
-    ED.Description
-  FROM EmployeeDeduction ED
-  LEFT JOIN Deductions D ON ED.DeductionId = D.Id
-  WHERE ED.EmployeeId = ${id}
-    AND ED.IsActive = 1
-`;
-
+    const deductions = await sql.query`
+      SELECT 
+        ED.Id,
+        ED.DeductionId,
+        D.Name AS DeductionName,
+        ED.Amount,
+        ED.Description
+      FROM EmployeeDeduction ED
+      LEFT JOIN Deductions D ON ED.DeductionId = D.Id
+      WHERE ED.EmployeeId = ${id}
+        AND ED.IsActive = 1
+    `;
 
     res.status(200).json({
       ...emp.recordset[0],
@@ -270,7 +241,7 @@ const deductions = await sql.query`
 exports.deleteEmployee = async (req, res) => {
   try {
     const { id } = req.params;
-    const userId = req.body.userId;
+    const userId = req.body.userId || 1;
 
     const result = await sql.query`
       UPDATE Employees
@@ -435,3 +406,65 @@ exports.updateEmployee = async (req, res) => {
   }
 };
 
+// ======================================================================
+// GET INACTIVE EMPLOYEES
+// ======================================================================
+exports.getInactiveEmployees = async (req, res) => {
+  try {
+    const result = await sql.query(`
+      SELECT 
+        e.Id,
+        e.FirstName,
+        e.LastName,
+        e.RateType,
+        e.HoureRateSalary,
+        e.ZipCode,
+        e.Address,
+        e.UserId,
+        e.RegionId,
+        e.TerritoryId,
+        e.Email,
+        e.Phone,
+        e.BloodGroup,
+        e.BasicSalary,
+        e.CountryId,
+        e.StateId,
+        e.CityId,
+        dsg.Designation AS designation,
+        dept.Department AS department
+      FROM Employees e
+      LEFT JOIN Designations dsg ON e.DesignationId = dsg.Id
+      LEFT JOIN Departments dept ON e.DepartmentId = dept.Id
+      WHERE e.IsActive = 0
+      ORDER BY e.Id DESC
+    `);
+
+    res.status(200).json(result.recordset);
+  } catch (error) {
+    console.error("GET INACTIVE EMPLOYEES ERROR:", error);
+    res.status(500).json({ message: "Error fetching inactive employees" });
+  }
+};
+
+// ======================================================================
+// RESTORE EMPLOYEE
+// ======================================================================
+exports.restoreEmployee = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.body.userId || 1;
+
+    await sql.query(`
+      UPDATE Employees
+      SET IsActive = 1,
+          UpdateDate = GETDATE(),
+          UpdateUserId = ${userId}
+      WHERE Id = ${id}
+    `);
+
+    res.status(200).json({ message: "Employee restored successfully" });
+  } catch (error) {
+    console.error("RESTORE EMPLOYEE ERROR:", error);
+    res.status(500).json({ message: "Error restoring employee" });
+  }
+};

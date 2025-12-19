@@ -40,4 +40,14 @@ router.get("/:id", employeeController.getEmployeeById);
 // -----------------------------
 router.delete("/:id", employeeController.deleteEmployee);
 
+// -----------------------------
+// INACTIVE EMPLOYEES
+// -----------------------------
+router.get("/inactive/list", employeeController.getInactiveEmployees);
+
+// -----------------------------
+// RESTORE EMPLOYEE
+// -----------------------------
+router.put("/restore/:id", employeeController.restoreEmployee);
+
 module.exports = router;

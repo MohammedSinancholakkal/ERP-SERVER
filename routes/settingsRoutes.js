@@ -27,10 +27,5 @@ router.put(
   settingsController.updateSettings
 );
 
-// Soft Delete
-router.delete("/delete/:id", settingsController.deleteSettings);
-
-// Restore
-router.put("/restore/:id", settingsController.restoreSettings);
 
 module.exports = router;
