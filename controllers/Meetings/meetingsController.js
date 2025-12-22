@@ -15,18 +15,32 @@ exports.getAllMeetings = async (req, res) => {
       WHERE IsActive = 1  
     `;
 
+    const totalRecords = totalResult.recordset[0]?.Total || 0;
+
+    if (totalRecords === 0) {
+      return res.status(200).json({
+        total: 0,
+        records: []
+      });
+    }
+
     const result = await sql.query`
       SELECT DISTINCT    
         m.Id AS id,
         m.MeetingName AS meetingName,
-        m.MeetingType AS meetingType,
+        ISNULL(mt.Name, m.MeetingTypeId) AS meetingType,
         m.StartDate AS startDate,
         m.EndDate AS endDate,
-        m.Department AS department,
-        m.Location AS location,
-        m.OrganizedBy AS organizedBy,
-        m.Reporter AS reporter
+        ISNULL(d.Department, m.DepartmentId) AS department,
+        ISNULL(l.Name, m.LocationId) AS location,
+        ISNULL(e1.FirstName + ' ' + ISNULL(e1.LastName, ''), m.OrganizedBy) AS organizedBy,
+        ISNULL(e2.FirstName + ' ' + ISNULL(e2.LastName, ''), m.ReporterId) AS reporter
       FROM Meetings m
+      LEFT JOIN MeetingTypes mt ON m.MeetingTypeId = CAST(mt.Id AS VARCHAR(50))
+      LEFT JOIN Departments d ON m.DepartmentId = CAST(d.Id AS VARCHAR(50))
+      LEFT JOIN Locations l ON m.LocationId = CAST(l.Id AS VARCHAR(50))
+      LEFT JOIN Employees e1 ON m.OrganizedBy = CAST(e1.Id AS VARCHAR(50))
+      LEFT JOIN Employees e2 ON m.ReporterId = CAST(e2.Id AS VARCHAR(50))
       WHERE m.IsActive = 1
       ORDER BY m.Id DESC
       OFFSET ${offset} ROWS
@@ -34,7 +48,7 @@ exports.getAllMeetings = async (req, res) => {
     `;
 
     res.status(200).json({
-      total: totalResult.recordset[0].Total,
+      total: totalRecords,
       records: result.recordset
     });
 
@@ -63,6 +77,14 @@ exports.addMeeting = async (req, res) => {
     userId
   } = req.body;
 
+  // Ensure numeric types for SQL
+  const mtInt = meetingType ? parseInt(meetingType, 10) : null;
+  const deptInt = department ? parseInt(department, 10) : null;
+  const locInt = location ? parseInt(location, 10) : null;
+  const orgInt = organizedBy ? parseInt(organizedBy, 10) : null;
+  const repInt = reporter ? parseInt(reporter, 10) : null;
+  const userIdInt = parseInt(userId, 10);
+
   const transaction = new sql.Transaction();
 
   try {
@@ -73,15 +95,15 @@ exports.addMeeting = async (req, res) => {
     // 1️⃣ INSERT MEETING AND RETURN NEW ID
     const meetingResult = await request.query`
       INSERT INTO Meetings (
-        MeetingName, MeetingType, StartDate, EndDate,
-        Department, Location, OrganizedBy, Reporter,
+        MeetingName, MeetingTypeId, StartDate, EndDate,
+        DepartmentId, LocationId, OrganizedBy, ReporterId,
         InsertDate, InsertUserId, IsActive
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${meetingName}, ${meetingType}, ${startDate}, ${endDate},
-        ${department}, ${location}, ${organizedBy}, ${reporter},
-        GETDATE(), ${userId}, 1
+        ${meetingName}, ${mtInt}, ${startDate}, ${endDate},
+        ${deptInt}, ${locInt}, ${orgInt}, ${repInt},
+        GETDATE(), ${userIdInt}, 1
       )
     `;
 
@@ -90,26 +112,29 @@ exports.addMeeting = async (req, res) => {
     // 2️⃣ INSERT ATTENDEES INTO MeetingAttendees TABLE
     if (Array.isArray(attendees)) {
       for (const at of attendees) {
-        await request.query`
-          INSERT INTO MeetingAttendees (
-            AttendeeType,
-            AttendanceStatus,
-            Attendee,
-            Meeting,
-            InsertDate,
-            InsertUserId,
-            IsActive
-          )
-          VALUES (
-            ${at.attendeeTypeId},
-            ${at.attendanceStatusId},
-            ${at.attendeeId},
-            ${meetingId},
-            GETDATE(),
-            ${userId},
-            1
-          )
-        `;
+        if (!at.attendeeId) continue; // Skip invalid users
+
+        const insertReq = new sql.Request(transaction);
+        await insertReq.query`
+          INSERT INTO MeetingAttendees(
+          AttendeeTypeId,
+          AttendanceStatusId,
+          AttendeeId,
+          MeetingId,
+          InsertDate,
+          InsertUserId,
+          IsActive
+        )
+        VALUES(
+          ${at.attendeeTypeId},
+          ${at.attendanceStatusId},
+          ${at.attendeeId},
+          ${meetingId},
+          GETDATE(),
+          ${userId},
+          1
+        )
+          `;
       }
     }
 
@@ -133,7 +158,7 @@ exports.addMeeting = async (req, res) => {
     });
   }
 };
-  
+
 
 
 // =============================================================
@@ -154,6 +179,15 @@ exports.updateMeeting = async (req, res) => {
     userId
   } = req.body;
 
+  // Ensure numeric types for SQL
+  const meetingIdInt = parseInt(id, 10);
+  const userIdInt = parseInt(userId, 10);
+  const mtInt = meetingType ? parseInt(meetingType, 10) : null;
+  const deptInt = department ? parseInt(department, 10) : null;
+  const locInt = location ? parseInt(location, 10) : null;
+  const orgInt = organizedBy ? parseInt(organizedBy, 10) : null;
+  const repInt = reporter ? parseInt(reporter, 10) : null;
+
   const transaction = new sql.Transaction();
 
   try {
@@ -163,46 +197,55 @@ exports.updateMeeting = async (req, res) => {
     // 1️⃣ UPDATE MEETING MASTER
     await request.query`
       UPDATE Meetings
-      SET
+        SET
         MeetingName = ${meetingName},
-        MeetingType = ${meetingType},
+        MeetingTypeId = ${mtInt},
         StartDate = ${startDate},
         EndDate = ${endDate},
-        Department = ${department},
-        Location = ${location},
-        OrganizedBy = ${organizedBy},
-        Reporter = ${reporter},
+        DepartmentId = ${deptInt},
+        LocationId = ${locInt},
+        OrganizedBy = ${orgInt},
+        ReporterId = ${repInt},
         UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
-      WHERE Id = ${id}
-    `;
+          UpdateUserId = ${userIdInt}
+      WHERE Id = ${meetingIdInt}
+        `;
 
     // 2️⃣ DELETE EXISTING ATTENDEES
-    await request.query`
+    const deleteReq = new sql.Request(transaction);
+    await deleteReq.query`
       DELETE FROM MeetingAttendees
-      WHERE Meeting = ${id}
+      WHERE MeetingId = ${meetingIdInt}
     `;
 
     // 3️⃣ INSERT NEW ATTENDEES
     if (Array.isArray(attendees)) {
       for (const at of attendees) {
-        await request.query`
+        if (!at.attendeeId) continue; // Skip invalid users
+
+        const attendeeIdInt = parseInt(at.attendeeId, 10);
+        const attendeeTypeIdInt = at.attendeeTypeId ? parseInt(at.attendeeTypeId, 10) : null;
+        const attendanceStatusIdInt = at.attendanceStatusId ? parseInt(at.attendanceStatusId, 10) : null;
+
+        // CRITICAL FIX: Create a new request for each iteration to avoid parameter name collisions (EDUPEPARAM)
+        const insertReq = new sql.Request(transaction);
+        await insertReq.query`
           INSERT INTO MeetingAttendees (
-            AttendeeType,
-            AttendanceStatus,
-            Attendee,
-            Meeting,
+            AttendeeTypeId,
+            AttendanceStatusId,
+            AttendeeId,
+            MeetingId,
             InsertDate,
             InsertUserId,
             IsActive
           )
           VALUES (
-            ${at.attendeeTypeId},
-            ${at.attendanceStatusId},
-            ${at.attendeeId},
-            ${id},
+            ${attendeeTypeIdInt},
+            ${attendanceStatusIdInt},
+            ${attendeeIdInt},
+            ${meetingIdInt},
             GETDATE(),
-            ${userId},
+            ${userIdInt},
             1
           )
         `;
@@ -257,19 +300,25 @@ exports.searchMeetings = async (req, res) => {
       SELECT
         m.Id AS id,
         m.MeetingName AS meetingName,
-        m.MeetingType AS meetingType,
+        ISNULL(mt.Name, m.MeetingTypeId) AS meetingType,
         m.StartDate AS startDate,
-        m.Department AS department,
-        m.OrganizedBy AS organizedBy,
-        m.Reporter AS reporter
+        ISNULL(d.Department, m.DepartmentId) AS department,
+        ISNULL(l.Name, m.LocationId) AS location,
+        ISNULL(e1.FirstName + ' ' + ISNULL(e1.LastName, ''), m.OrganizedBy) AS organizedBy,
+        ISNULL(e2.FirstName + ' ' + ISNULL(e2.LastName, ''), m.ReporterId) AS reporter
       FROM Meetings m
+      LEFT JOIN MeetingTypes mt ON m.MeetingTypeId = CAST(mt.Id AS VARCHAR(50))
+      LEFT JOIN Departments d ON m.DepartmentId = CAST(d.Id AS VARCHAR(50))
+      LEFT JOIN Locations l ON m.LocationId = CAST(l.Id AS VARCHAR(50))
+      LEFT JOIN Employees e1 ON m.OrganizedBy = CAST(e1.Id AS VARCHAR(50))
+      LEFT JOIN Employees e2 ON m.ReporterId = CAST(e2.Id AS VARCHAR(50))
       WHERE m.IsActive = 1
         AND (
           m.MeetingName LIKE '%' + ${q} + '%' OR
-          m.MeetingType LIKE '%' + ${q} + '%' OR
-          m.Department LIKE '%' + ${q} + '%' OR
-          m.OrganizedBy LIKE '%' + ${q} + '%' OR
-          m.Reporter LIKE '%' + ${q} + '%'
+          mt.Name LIKE '%' + ${q} + '%' OR
+          d.Department LIKE '%' + ${q} + '%' OR
+          (e1.FirstName + ' ' + ISNULL(e1.LastName, '')) LIKE '%' + ${q} + '%' OR
+          (e2.FirstName + ' ' + ISNULL(e2.LastName, '')) LIKE '%' + ${q} + '%'
         )
       ORDER BY m.Id DESC
     `;
@@ -291,16 +340,22 @@ exports.getInactiveMeetings = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id AS id,
-        MeetingName AS meetingName,
-        MeetingType AS meetingType,
-        StartDate AS startDate,
-        Department AS department,
-        DeleteDate,
-        DeleteUserId
-      FROM Meetings
-      WHERE IsActive = 0
-      ORDER BY DeleteDate DESC
+        m.Id AS id,
+        m.MeetingName AS meetingName,
+        ISNULL(mt.Name, m.MeetingTypeId) AS meetingType,
+        m.StartDate AS startDate,
+        ISNULL(d.Department, m.DepartmentId) AS department,
+        ISNULL(l.Name, m.LocationId) AS location,
+        ISNULL(e1.FirstName + ' ' + ISNULL(e1.LastName, ''), m.OrganizedBy) AS organizedBy,
+        m.DeleteDate,
+        m.DeleteUserId
+      FROM Meetings m
+      LEFT JOIN MeetingTypes mt ON m.MeetingTypeId = CAST(mt.Id AS VARCHAR(50))
+      LEFT JOIN Departments d ON m.DepartmentId = CAST(d.Id AS VARCHAR(50))
+      LEFT JOIN Locations l ON m.LocationId = CAST(l.Id AS VARCHAR(50))
+      LEFT JOIN Employees e1 ON m.OrganizedBy = CAST(e1.Id AS VARCHAR(50))
+      WHERE m.IsActive = 0
+      ORDER BY m.DeleteDate DESC
     `;
 
     res.status(200).json({
@@ -351,17 +406,22 @@ exports.getMeetingById = async (req, res) => {
     // =====================
     const meetingResult = await sql.query`
       SELECT 
-        Id AS id,
-        MeetingName AS meetingName,
-        MeetingType AS meetingType,
-        StartDate AS startDate,
-        EndDate AS endDate,
-        Department AS department,
-        Location AS location,
-        OrganizedBy AS organizedBy,
-        Reporter AS reporter
-      FROM Meetings
-      WHERE Id = ${id}
+        m.Id AS id,
+        m.MeetingName AS meetingName,
+        COALESCE(CAST(mt.Id AS VARCHAR(50)), m.MeetingTypeId) AS meetingType,
+        m.StartDate AS startDate,
+        m.EndDate AS endDate,
+        COALESCE(CAST(d.Id AS VARCHAR(50)), m.DepartmentId) AS department,
+        COALESCE(CAST(l.Id AS VARCHAR(50)), m.LocationId) AS location,
+        COALESCE(CAST(e1.Id AS VARCHAR(50)), m.OrganizedBy) AS organizedBy,
+        COALESCE(CAST(e2.Id AS VARCHAR(50)), m.ReporterId) AS reporter
+      FROM Meetings m
+      LEFT JOIN MeetingTypes mt ON m.MeetingTypeId = mt.Id
+      LEFT JOIN Departments d ON m.DepartmentId = d.Id
+      LEFT JOIN Locations l ON m.LocationId = l.Id
+      LEFT JOIN Employees e1 ON m.OrganizedBy = e1.Id
+      LEFT JOIN Employees e2 ON m.ReporterId = e2.Id
+      WHERE m.Id = ${id}
     `;
 
     // =====================
@@ -370,10 +430,10 @@ exports.getMeetingById = async (req, res) => {
     const attendeesResult = await sql.query`
       SELECT
         ma.Id,
-        ma.Attendee AS attendeeId,
-        ma.AttendeeType AS attendeeTypeId,
-        ma.AttendanceStatus AS attendanceStatusId,
-        ma.Meeting,
+        ma.AttendeeId AS attendeeId,
+        ma.AttendeeTypeId AS attendeeTypeId,
+        ma.AttendanceStatusId AS attendanceStatusId,
+        ma.MeetingId AS meeting,
         e.Id AS employeeId,
         ISNULL(e.FirstName, '') + ' ' + ISNULL(e.LastName, '') AS attendeeName,
         ISNULL(d.Department, '') AS departmentName,
@@ -381,12 +441,12 @@ exports.getMeetingById = async (req, res) => {
         ISNULL(at.Name, '') AS attendeeTypeName,
         ISNULL(as_status.Name, '') AS attendanceStatusName
       FROM MeetingAttendees ma
-      LEFT JOIN Employees e ON ma.Attendee = e.Id
-      LEFT JOIN Departments d ON e.DepartmentId = d.Id
-      LEFT JOIN Designations desig ON e.DesignationId = desig.Id
-      LEFT JOIN AttendeeTypes at ON ma.AttendeeType = at.Id
-      LEFT JOIN AttendanceStatuses as_status ON ma.AttendanceStatus = as_status.Id
-      WHERE ma.Meeting = ${id}
+      LEFT JOIN Employees e ON ma.AttendeeId = CAST(e.Id AS VARCHAR(50))
+      LEFT JOIN Departments d ON e.DepartmentId = CAST(d.Id AS VARCHAR(50))
+      LEFT JOIN Designations desig ON e.DesignationId = CAST(desig.Id AS VARCHAR(50))
+      LEFT JOIN AttendeeTypes at ON ma.AttendeeTypeId = CAST(at.Id AS VARCHAR(50))
+      LEFT JOIN AttendanceStatuses as_status ON ma.AttendanceStatusId = CAST(as_status.Id AS VARCHAR(50))
+      WHERE ma.MeetingId = ${id}
         AND ma.IsActive = 1
     `;
 

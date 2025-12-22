@@ -1,22 +1,27 @@
 
-
 const sql = require("mssql");
 
 const config = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  server: process.env.DB_SERVER,       // e.g. SQL5105.site4now.net
+  server: process.env.DB_SERVER,       
   database: process.env.DB_NAME,
   port: 1433,
+  
+  connectionTimeout: 60000, 
+  requestTimeout: 60000,
+
   pool: {
-    max: 10,
+    max: 4,    
     min: 0,
     idleTimeoutMillis: 30000,
   },
   options: {
-    encrypt: false,               // MUST BE false on Windows hosting
-    trustServerCertificate: true, // MUST be true
-    enableArithAbort: true
+    encrypt: false,               
+    trustServerCertificate: true, 
+    enableArithAbort: true,
+    connectTimeout: 60000,        
+    cancelTimeout: 60000
   },
 };
 

@@ -17,17 +17,23 @@ exports.getAllGoodsReceipts = async (req, res) => {
 
     const result = await sql.query`
       SELECT
-        Id AS id,
-        SupplierId AS supplierId,
-        PurchaseId AS purchaseId,
-        Date AS date,
-        TotalQuantity AS totalQuantity,
-        EmployeeId AS employeeId,
-        Reference,
-        Remarks
-      FROM GoodsReceipt
-      WHERE IsActive = 1
-      ORDER BY InsertDate DESC
+        GR.Id AS id,
+        GR.SupplierId AS supplierId,
+        S.CompanyName AS supplierName,
+        GR.PurchaseId AS purchaseId,
+        P.InvoiceNo AS purchaseInvoice,
+        GR.Date AS date,
+        GR.TotalQuantity AS totalQuantity,
+        GR.EmployeeId AS employeeId,
+        E.FirstName + ' ' + ISNULL(E.LastName, '') AS employeeName,
+        GR.Reference,
+        GR.Remarks
+      FROM GoodsReceipt GR
+      LEFT JOIN Suppliers S ON S.Id = GR.SupplierId
+      LEFT JOIN Employees E ON E.Id = GR.EmployeeId
+      LEFT JOIN Purchases P ON P.Id = GR.PurchaseId
+      WHERE GR.IsActive = 1
+      ORDER BY GR.InsertDate DESC
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
@@ -306,14 +312,30 @@ exports.getInactiveGoodsReceipts = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id AS id,
-        Date,
-        TotalQuantity,
-        DeleteDate,
-        DeleteUserId
-      FROM GoodsReceipt
-      WHERE IsActive = 0
-      ORDER BY DeleteDate DESC
+        GR.Id AS id,
+        GR.Date,
+        GR.TotalQuantity,
+        GR.Reference,
+        GR.Remarks,
+        GR.DeleteDate,
+        GR.DeleteUserId,
+
+        -- Supplier
+        S.CompanyName AS supplierName,
+
+        -- Purchase
+        P.InvoiceNo AS purchaseInvoice,
+
+        -- Employee
+        E.FirstName + ' ' + ISNULL(E.LastName, '') AS employeeName
+
+      FROM GoodsReceipt GR
+      LEFT JOIN Suppliers S ON GR.SupplierId = S.Id
+      LEFT JOIN Purchases P ON GR.PurchaseId = P.Id
+      LEFT JOIN Employees E ON GR.EmployeeId = E.Id
+
+      WHERE GR.IsActive = 0
+      ORDER BY GR.DeleteDate DESC
     `;
 
     res.status(200).json({ records: result.recordset });
@@ -353,4 +375,3 @@ exports.restoreGoodsReceipt = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-         

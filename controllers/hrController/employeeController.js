@@ -5,23 +5,23 @@ const sql = require("mssql");
 // ======================================================================
 exports.createEmployee = async (req, res) => {
   const transaction = new sql.Transaction();
-
+         
   try {  
     // Parse JSON data from FormData
     let parsedBody = req.body;
     if (req.body.data) {
       parsedBody = JSON.parse(req.body.data);
-    }
+    }    
 
-    const {
-      firstName,
-      lastName,
-      designationId,
-      departmentId,
-      rateType,
-      hourlyRate,
+    const { 
+      firstName,     
+      lastName,    
+      designationId,  
+      departmentId,   
+      rateType,   
+      hourlyRate,       
       salary,
-      bloodGroup,
+      bloodGroup,  
       phone, 
       email,
       countryId,

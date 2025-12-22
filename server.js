@@ -7,7 +7,7 @@ const path = require("path");
 const userRoutes = require("./routes/userRoutes");
 const countryRoutes = require("./routes/countryRoutes");
 const cityRoutes = require("./routes/cityRoutes");
-const stateRoutes = require("./routes/stateRoutes");
+const stateRoutes = require("./routes/stateRoutes"); 
 const territoryRoutes = require("./routes/territoryRoutes");
 const regionRoutes = require("./routes/regionRoutes");
 const expenseTypeRoutes = require("./routes/expenseTypeRoutes");
@@ -18,7 +18,7 @@ const shipperRoutes = require("./routes/shipperRoutes");
 const customerGroupRoutes = require("./routes/customerGroupRoutes");
 const supplierGroupRoutes = require("./routes/supplierGroupRoutes");
 const agendaItemTypeRoutes = require("./routes/agendaItemTypeRoutes");
-const meetingTypeRoutes = require("./routes/meetingTypeRoutes");
+const meetingTypeRoutes = require("./routes/meetingTypeRoutes"); 
 const deductionRoutes = require("./routes/deductionRoutes");
 const resolutionStatusRoutes = require("./routes/resolutionStatusRoutes");
 const attendeeTypeRoutes = require("./routes/attendeeTypeRoutes");
@@ -50,6 +50,8 @@ const salesRoutes = require("./routes/salesRoutes");
 const quotationRoutes = require("./routes/quotationRoutes");
 const serviceInvoiceRoutes = require("./routes/serviceInvoiceRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
+const agendaItemsRoutes = require("./routes/agendaItemsRoutes"); // New
+
 
 
 
@@ -165,6 +167,7 @@ ERP_SERVER.use("/api/sales", salesRoutes);
 ERP_SERVER.use("/api/quotations", quotationRoutes); 
 ERP_SERVER.use("/api/service-invoices", serviceInvoiceRoutes); 
 ERP_SERVER.use("/api/payrolls", payrollRoutes);
+ERP_SERVER.use("/api/agenda-items", agendaItemsRoutes);
 
 
 

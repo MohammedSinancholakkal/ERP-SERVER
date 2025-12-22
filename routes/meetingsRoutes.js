@@ -11,11 +11,10 @@ router.get("/", meetingsController.getAllMeetings);
 router.put("/update/:id", meetingsController.updateMeeting);
 router.delete("/delete/:id", meetingsController.deleteMeeting);
 router.get("/search", meetingsController.searchMeetings);
-router.get("/:id", meetingsController.getMeetingById);
-
-
 // Inactive + Restore
 router.get("/inactive", meetingsController.getInactiveMeetings);
 router.put("/restore/:id", meetingsController.restoreMeeting);
+
+router.get("/:id", meetingsController.getMeetingById);
 
 module.exports = router;
