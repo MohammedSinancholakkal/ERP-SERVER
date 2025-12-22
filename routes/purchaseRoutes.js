@@ -18,7 +18,7 @@ router.get("/", purchaseController.getAllPurchases);
 router.put("/update/:id", purchaseController.updatePurchase);
 
 // Delete (soft)
-router.delete("/delete/:id", purchaseController.deletePurchase);
+router.put("/delete/:id", purchaseController.deletePurchase);
 
 // Restore
 router.put("/restore/:id", purchaseController.restorePurchase);

@@ -30,7 +30,7 @@ exports.getAllPurchases = async (req, res) => {
         p.VNo AS vno,
         p.TotalDiscount AS totalDiscount,
         p.ShippingCost AS shippingCost,
-        p.Change AS change,
+        p.[Change] AS change,
         p.Details AS details
       FROM Purchases p
       LEFT JOIN Suppliers s ON p.SupplierId = s.Id
@@ -186,6 +186,11 @@ exports.getPurchaseById = async (req, res) => {
 // ADD PURCHASE (MASTER + DETAILS)
 // =============================================================
 exports.addPurchase = async (req, res) => {
+  console.log("DEBUG ADD PURCHASE BODY CHECKS:", {
+    paidAmount: req.body.paidAmount,
+    netTotal: req.body.netTotal,
+    change: req.body.change
+  });
   const {
     supplierId,
     invoiceNo,
@@ -223,7 +228,7 @@ exports.addPurchase = async (req, res) => {
       INSERT INTO Purchases (
         SupplierId, InvoiceNo, Date,
         Discount, TotalDiscount, ShippingCost,
-        GrandTotal, NetTotal, PaidAmount, Due, Change,
+        GrandTotal, NetTotal, PaidAmount, Due, [Change],
         Details, PaymentAccount, EmployeeId, VNo,
         Vat, TotalTax, VatPercentage, NoTax, VatType,
         InsertUserId
@@ -320,7 +325,7 @@ exports.updatePurchase = async (req, res) => {
         NetTotal = ${netTotal},
         PaidAmount = ${paidAmount},
         Due = ${due},
-        Change = ${change},
+        [Change] = ${change},
         Details = ${details},
         PaymentAccount = ${paymentAccount},
         EmployeeId = ${employeeId},
@@ -475,7 +480,7 @@ exports.searchPurchase = async (req, res) => {
         p.PaymentAccount AS paymentAccount,
         p.TotalDiscount AS totalDiscount,
         p.ShippingCost AS shippingCost,
-        p.Change AS change,
+        p.[Change] AS change,
         p.Details AS details
       FROM Purchases p
       LEFT JOIN Suppliers s ON p.SupplierId = s.Id
