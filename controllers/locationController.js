@@ -10,13 +10,22 @@ exports.getAllLocations = async (req, res) => {
     let limit = parseInt(req.query.limit) || 25;
     let offset = (page - 1) * limit;
 
-    const totalResult = await sql.query`
-      SELECT COUNT(*) AS Total
-      FROM Locations
-      WHERE IsActive = 1
-    `;
+    let countryId = req.query.countryId;
+    let stateId = req.query.stateId;
+    let cityId = req.query.cityId;
 
-    const result = await sql.query`
+    let whereClause = "L.IsActive = 1";
+    if (countryId) whereClause += ` AND L.CountryId = ${countryId}`;
+    if (stateId) whereClause += ` AND L.StateId = ${stateId}`;
+    if (cityId) whereClause += ` AND L.CityId = ${cityId}`;
+
+    const totalResult = await sql.query(`
+      SELECT COUNT(*) AS Total
+      FROM Locations L
+      WHERE ${whereClause}
+    `);
+
+    const result = await sql.query(`
       SELECT 
         L.Id,
         L.Name,
@@ -37,11 +46,11 @@ exports.getAllLocations = async (req, res) => {
       LEFT JOIN Countries C ON L.CountryId = C.Id
       LEFT JOIN States S ON L.StateId = S.Id
       LEFT JOIN Cities CI ON L.CityId = CI.Id
-      WHERE L.IsActive = 1
+      WHERE ${whereClause}
       ORDER BY L.Id DESC
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
-    `;
+    `);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

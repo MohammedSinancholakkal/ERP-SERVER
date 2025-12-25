@@ -50,7 +50,12 @@ const salesRoutes = require("./routes/salesRoutes");
 const quotationRoutes = require("./routes/quotationRoutes");
 const serviceInvoiceRoutes = require("./routes/serviceInvoiceRoutes");
 const payrollRoutes = require("./routes/payrollRoutes");
-const agendaItemsRoutes = require("./routes/agendaItemsRoutes"); // New
+const agendaItemsRoutes = require("./routes/agendaItemsRoutes");
+const agendaDecisionsRoutes = require("./routes/agendaDecisionsRoutes"); // New
+
+// ... (lines skipped)
+
+
 
 
 
@@ -168,7 +173,8 @@ ERP_SERVER.use("/api/quotations", quotationRoutes);
 ERP_SERVER.use("/api/service-invoices", serviceInvoiceRoutes); 
 ERP_SERVER.use("/api/payrolls", payrollRoutes);
 ERP_SERVER.use("/api/agenda-items", agendaItemsRoutes);
-
+ERP_SERVER.use("/api/agenda-items", agendaItemsRoutes);
+ERP_SERVER.use("/api/agenda-decisions", agendaDecisionsRoutes);
 
 
 // const PORT = process.env.PORT || 5000; 

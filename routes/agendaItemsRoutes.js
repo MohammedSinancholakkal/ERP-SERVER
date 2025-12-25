@@ -10,7 +10,7 @@ const uploadFields = uploadAgendaFiles.fields([
 ]);
 
 // GET (by meeting id)
-router.get("/:meetingId", agendaItemsController.getAgendaItems);
+router.get("/all", agendaItemsController.getAgendaItems);
 
 // ADD
 router.post("/add", uploadFields, agendaItemsController.addAgendaItem);

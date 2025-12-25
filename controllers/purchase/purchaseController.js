@@ -94,7 +94,13 @@ exports.getPurchaseById = async (req, res) => {
 // =============================================================
 // ADD PURCHASE (MASTER + DETAILS)
 // =============================================================
+
 // exports.addPurchase = async (req, res) => {
+//   console.log("DEBUG ADD PURCHASE BODY CHECKS:", {
+//     paidAmount: req.body.paidAmount,
+//     netTotal: req.body.netTotal,
+//     change: req.body.change
+//   });
 //   const {
 //     supplierId,
 //     invoiceNo,
@@ -116,7 +122,7 @@ exports.getPurchaseById = async (req, res) => {
 //     vatPercentage,
 //     noTax,
 //     vatType,
-//     items, // PurchaseDetails array
+//     items = [], // PurchaseDetails array
 //     userId
 //   } = req.body;
 
@@ -125,13 +131,14 @@ exports.getPurchaseById = async (req, res) => {
 //   try {
 //     await transaction.begin();
 
-//     const request = new sql.Request(transaction);
+//     // use a fresh Request for the master insert
+//     const purchaseReq = new sql.Request(transaction);
 
-//     const purchaseResult = await request.query`
+//     const purchaseResult = await purchaseReq.query`
 //       INSERT INTO Purchases (
 //         SupplierId, InvoiceNo, Date,
 //         Discount, TotalDiscount, ShippingCost,
-//         GrandTotal, NetTotal, PaidAmount, Due, Change,
+//         GrandTotal, NetTotal, PaidAmount, Due, [Change],
 //         Details, PaymentAccount, EmployeeId, VNo,
 //         Vat, TotalTax, VatPercentage, NoTax, VatType,
 //         InsertUserId
@@ -149,8 +156,10 @@ exports.getPurchaseById = async (req, res) => {
 
 //     const purchaseId = purchaseResult.recordset[0].Id;
 
+//     // use a NEW Request for each detail insert to avoid duplicate param names
 //     for (const item of items) {
-//       await request.query`
+//       const detailReq = new sql.Request(transaction);
+//       await detailReq.query`
 //         INSERT INTO PurchaseDetails (
 //           ProductId, ProductName, Description,
 //           UnitId, UnitName,
@@ -178,19 +187,7 @@ exports.getPurchaseById = async (req, res) => {
 
 
 
-
-// =============================================================
-// ADD PURCHASE (MASTER + DETAILS)
-// =============================================================
-// =============================================================
-// ADD PURCHASE (MASTER + DETAILS)
-// =============================================================
 exports.addPurchase = async (req, res) => {
-  console.log("DEBUG ADD PURCHASE BODY CHECKS:", {
-    paidAmount: req.body.paidAmount,
-    netTotal: req.body.netTotal,
-    change: req.body.change
-  });
   const {
     supplierId,
     invoiceNo,
@@ -212,19 +209,33 @@ exports.addPurchase = async (req, res) => {
     vatPercentage,
     noTax,
     vatType,
-    items = [], // PurchaseDetails array
+    items = [],
     userId
   } = req.body;
+
+  // 🔒 FORCE NUMERIC SAFETY
+  const safeNumbers = {
+    discount: Number(discount) || 0,
+    totalDiscount: Number(totalDiscount) || 0,
+    shippingCost: Number(shippingCost) || 0,
+    grandTotal: Number(grandTotal) || 0,
+    netTotal: Number(netTotal) || 0,
+    paidAmount: Number(paidAmount) || 0,
+    due: Number(due) || 0,
+    change: Number(change) || 0,
+    vat: Number(vat) || 0,
+    totalTax: Number(totalTax) || 0,
+    vatPercentage: Number(vatPercentage) || 0
+  };
 
   const transaction = new sql.Transaction();
 
   try {
     await transaction.begin();
 
-    // use a fresh Request for the master insert
     const purchaseReq = new sql.Request(transaction);
 
-    const purchaseResult = await purchaseReq.query`
+    const result = await purchaseReq.query`
       INSERT INTO Purchases (
         SupplierId, InvoiceNo, Date,
         Discount, TotalDiscount, ShippingCost,
@@ -236,17 +247,18 @@ exports.addPurchase = async (req, res) => {
       OUTPUT INSERTED.Id
       VALUES (
         ${supplierId}, ${invoiceNo}, ${date},
-        ${discount}, ${totalDiscount}, ${shippingCost},
-        ${grandTotal}, ${netTotal}, ${paidAmount}, ${due}, ${change},
+        ${safeNumbers.discount}, ${safeNumbers.totalDiscount}, ${safeNumbers.shippingCost},
+        ${safeNumbers.grandTotal}, ${safeNumbers.netTotal},
+        ${safeNumbers.paidAmount}, ${safeNumbers.due}, ${safeNumbers.change},
         ${details}, ${paymentAccount}, ${employeeId}, ${vno},
-        ${vat}, ${totalTax}, ${vatPercentage}, ${noTax || 0}, ${vatType},
+        ${safeNumbers.vat}, ${safeNumbers.totalTax},
+        ${safeNumbers.vatPercentage}, ${noTax ? 1 : 0}, ${vatType},
         ${userId}
       )
     `;
 
-    const purchaseId = purchaseResult.recordset[0].Id;
+    const purchaseId = result.recordset[0].Id;
 
-    // use a NEW Request for each detail insert to avoid duplicate param names
     for (const item of items) {
       const detailReq = new sql.Request(transaction);
       await detailReq.query`
@@ -257,10 +269,17 @@ exports.addPurchase = async (req, res) => {
           PurchaseId, InsertUserId
         )
         VALUES (
-          ${item.productId}, ${item.productName}, ${item.description},
-          ${item.unitId}, ${item.unitName},
-          ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total},
-          ${purchaseId}, ${userId}
+          ${item.productId},
+          ${item.productName},
+          ${item.description},
+          ${item.unitId},
+          ${item.unitName},
+          ${Number(item.quantity) || 0},
+          ${Number(item.unitPrice) || 0},
+          ${Number(item.discount) || 0},
+          ${Number(item.total) || 0},
+          ${purchaseId},
+          ${userId}
         )
       `;
     }
@@ -275,9 +294,108 @@ exports.addPurchase = async (req, res) => {
   }
 };
 
+
 // =============================================================
 // UPDATE PURCHASE (MASTER + DETAILS)
 // =============================================================
+// exports.updatePurchase = async (req, res) => {
+//   const { id } = req.params;
+//   const {
+//     supplierId,
+//     invoiceNo,
+//     date,
+//     discount,
+//     totalDiscount,
+//     shippingCost,
+//     grandTotal,
+//     netTotal,
+//     paidAmount,
+//     due,
+//     change,
+//     details,
+//     paymentAccount,
+//     employeeId,
+//     vno,
+//     vat,
+//     totalTax,
+//     vatPercentage,
+//     noTax,
+//     vatType,
+//     items = [], // PurchaseDetails array
+//     userId
+//   } = req.body;
+
+//   const transaction = new sql.Transaction();
+
+//   try {
+//     await transaction.begin();
+
+//     // 1. Update Master
+//     const purchaseReq = new sql.Request(transaction);
+//     await purchaseReq.query`
+//       UPDATE Purchases
+//       SET
+//         SupplierId = ${supplierId},
+//         InvoiceNo = ${invoiceNo},
+//         Date = ${date},
+//         Discount = ${discount},
+//         TotalDiscount = ${totalDiscount},
+//         ShippingCost = ${shippingCost},
+//         GrandTotal = ${grandTotal},
+//         NetTotal = ${netTotal},
+//         PaidAmount = ${paidAmount},
+//         Due = ${due},
+//         [Change] = ${change},
+//         Details = ${details},
+//         PaymentAccount = ${paymentAccount},
+//         EmployeeId = ${employeeId},
+//         VNo = ${vno},
+//         Vat = ${vat},
+//         TotalTax = ${totalTax},
+//         VatPercentage = ${vatPercentage},
+//         NoTax = ${noTax || 0},
+//         VatType = ${vatType},
+//         UpdateDate = GETDATE(),
+//         UpdateUserId = ${userId}
+//       WHERE Id = ${id}
+//     `;
+
+//     // 2. Delete Existing Details
+//     const deleteReq = new sql.Request(transaction);
+//     await deleteReq.query`
+//       DELETE FROM PurchaseDetails WHERE PurchaseId = ${id}
+//     `;
+
+//     // 3. Insert New Details
+//     for (const item of items) {
+//       const detailReq = new sql.Request(transaction);
+//       await detailReq.query`
+//         INSERT INTO PurchaseDetails (
+//           ProductId, ProductName, Description,
+//           UnitId, UnitName,
+//           Quantity, UnitPrice, Discount, Total,
+//           PurchaseId, InsertUserId
+//         )
+//         VALUES (
+//           ${item.productId}, ${item.productName}, ${item.description},
+//           ${item.unitId}, ${item.unitName},
+//           ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total},
+//           ${id}, ${userId}
+//         )
+//       `;
+//     }
+
+//     await transaction.commit();
+//     res.status(200).json({ message: "Purchase updated successfully" });
+
+//   } catch (error) {
+//     await transaction.rollback();
+//     console.error("UPDATE PURCHASE ERROR:", error);
+//     res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+
 exports.updatePurchase = async (req, res) => {
   const { id } = req.params;
   const {
@@ -301,16 +419,29 @@ exports.updatePurchase = async (req, res) => {
     vatPercentage,
     noTax,
     vatType,
-    items = [], // PurchaseDetails array
+    items = [],
     userId
   } = req.body;
+
+  const safeNumbers = {
+    discount: Number(discount) || 0,
+    totalDiscount: Number(totalDiscount) || 0,
+    shippingCost: Number(shippingCost) || 0,
+    grandTotal: Number(grandTotal) || 0,
+    netTotal: Number(netTotal) || 0,
+    paidAmount: Number(paidAmount) || 0,
+    due: Number(due) || 0,
+    change: Number(change) || 0,
+    vat: Number(vat) || 0,
+    totalTax: Number(totalTax) || 0,
+    vatPercentage: Number(vatPercentage) || 0
+  };
 
   const transaction = new sql.Transaction();
 
   try {
     await transaction.begin();
 
-    // 1. Update Master
     const purchaseReq = new sql.Request(transaction);
     await purchaseReq.query`
       UPDATE Purchases
@@ -318,51 +449,56 @@ exports.updatePurchase = async (req, res) => {
         SupplierId = ${supplierId},
         InvoiceNo = ${invoiceNo},
         Date = ${date},
-        Discount = ${discount},
-        TotalDiscount = ${totalDiscount},
-        ShippingCost = ${shippingCost},
-        GrandTotal = ${grandTotal},
-        NetTotal = ${netTotal},
-        PaidAmount = ${paidAmount},
-        Due = ${due},
-        [Change] = ${change},
+        Discount = ${safeNumbers.discount},
+        TotalDiscount = ${safeNumbers.totalDiscount},
+        ShippingCost = ${safeNumbers.shippingCost},
+        GrandTotal = ${safeNumbers.grandTotal},
+        NetTotal = ${safeNumbers.netTotal},
+        PaidAmount = ${safeNumbers.paidAmount},
+        Due = ${safeNumbers.due},
+        [Change] = ${safeNumbers.change},
         Details = ${details},
         PaymentAccount = ${paymentAccount},
         EmployeeId = ${employeeId},
         VNo = ${vno},
-        Vat = ${vat},
-        TotalTax = ${totalTax},
-        VatPercentage = ${vatPercentage},
-        NoTax = ${noTax || 0},
+        Vat = ${safeNumbers.vat},
+        TotalTax = ${safeNumbers.totalTax},
+        VatPercentage = ${safeNumbers.vatPercentage},
+        NoTax = ${noTax ? 1 : 0},
         VatType = ${vatType},
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 
-    // 2. Delete Existing Details
     const deleteReq = new sql.Request(transaction);
     await deleteReq.query`
       DELETE FROM PurchaseDetails WHERE PurchaseId = ${id}
     `;
 
-    // 3. Insert New Details
     for (const item of items) {
       const detailReq = new sql.Request(transaction);
       await detailReq.query`
         INSERT INTO PurchaseDetails (
-          ProductId, ProductName, Description,
+          ProductId, ProductName, Description, 
           UnitId, UnitName,
           Quantity, UnitPrice, Discount, Total,
           PurchaseId, InsertUserId
         )
         VALUES (
-          ${item.productId}, ${item.productName}, ${item.description},
-          ${item.unitId}, ${item.unitName},
-          ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total},
-          ${id}, ${userId}
+          ${item.productId},
+          ${item.productName},
+          ${item.description},
+          ${item.unitId},
+          ${item.unitName},
+          ${Number(item.quantity) || 0},
+          ${Number(item.unitPrice) || 0},
+          ${Number(item.discount) || 0},
+          ${Number(item.total) || 0},
+          ${id},    
+          ${userId}     
         )
-      `;
+      `;      
     }
 
     await transaction.commit();
