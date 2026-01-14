@@ -1,0 +1,28 @@
+const express = require("express");
+const router = express.Router();
+const payrollController = require("../controllers/hrController/payrollController");
+const checkPermission = require("../middleware/checkPermission");
+const PERMISSIONS = require("../constants/permissions");
+
+// Add
+router.post("/add", checkPermission(PERMISSIONS.HR.PAYROLL.CREATE), payrollController.addPayroll);
+
+// Update
+router.put("/update/:id", checkPermission(PERMISSIONS.HR.PAYROLL.EDIT), payrollController.updatePayroll);
+
+// List (paginated)
+router.get("/", checkPermission(PERMISSIONS.HR.PAYROLL.VIEW), payrollController.getAllPayrolls);
+
+// Inactive
+router.get("/inactive", checkPermission(PERMISSIONS.HR.PAYROLL.VIEW), payrollController.getInactivePayrolls);
+
+// Delete (soft)
+router.delete("/delete/:id", checkPermission(PERMISSIONS.HR.PAYROLL.DELETE), payrollController.deletePayroll);
+
+// Get by id (full details)
+router.get("/:id", checkPermission(PERMISSIONS.HR.PAYROLL.VIEW), payrollController.getPayrollById);
+
+// Restore
+router.put("/restore/:id", checkPermission(PERMISSIONS.HR.PAYROLL.DELETE), payrollController.restorePayroll);
+
+module.exports = router;
