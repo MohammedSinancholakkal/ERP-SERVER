@@ -17,7 +17,18 @@ exports.getAllStocks = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "S.Id";
+    if (sortBy === "productName") sortColumn = "P.ProductName";
+    else if (sortBy === "warehouseName") sortColumn = "W.Name";
+    else if (sortBy === "mode") sortColumn = "S.Mode";
+    else if (sortBy === "status") sortColumn = "S.Status";
+    else if (sortBy === "quantity") sortColumn = "S.Quantity";
+    else if (sortBy === "vNo") sortColumn = "S.VNo";
+
+    const query = `
       SELECT 
         S.Id,
         S.ProductId,
@@ -38,10 +49,12 @@ exports.getAllStocks = async (req, res) => {
       LEFT JOIN Products P ON S.ProductId = P.Id
       LEFT JOIN Warehouses W ON S.WarehouseId = W.Id
       WHERE S.IsActive = 1
-      ORDER BY S.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset?.[0]?.Total ?? 0,

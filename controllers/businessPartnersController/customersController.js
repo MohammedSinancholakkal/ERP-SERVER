@@ -7,17 +7,28 @@ exports.getAllCustomers = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;      
     const limit = parseInt(req.query.limit) || 25;
-    const offset = (page - 1) * limit;
+    const offset = (page - 1) * limit;     
   
     // TOTAL COUNT
     const totalResult = await sql.query`  
       SELECT COUNT(*) AS Total        
       FROM Customers
-      WHERE IsActive = 1
+      WHERE IsActive = 1         
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "name") sortColumn = "Name";
+    else if (sortBy === "email") sortColumn = "Email";
+    else if (sortBy === "phone") sortColumn = "Phone";
+    else if (sortBy === "pan") sortColumn = "PAN";
+    else if (sortBy === "gstin") sortColumn = "GSTTIN";
+
     // PAGINATED LIST
-    const result = await sql.query`
+    // PAGINATED LIST
+    const query = `
       SELECT
         Id AS id,
         Name AS name,
@@ -43,10 +54,16 @@ exports.getAllCustomers = async (req, res) => {
         GSTTIN AS gstin
       FROM Customers
       WHERE IsActive = 1
-      ORDER BY Id DESC
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      ORDER BY ${sortColumn} ${order}
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
+
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -276,7 +293,17 @@ exports.searchCustomers = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "name") sortColumn = "Name";
+    else if (sortBy === "email") sortColumn = "Email";
+    else if (sortBy === "phone") sortColumn = "Phone";
+    else if (sortBy === "pan") sortColumn = "PAN";
+    else if (sortBy === "gstin") sortColumn = "GSTTIN";
+
+    const query = `
       SELECT
         Id AS id,
         Name AS name,
@@ -303,15 +330,20 @@ exports.searchCustomers = async (req, res) => {
       FROM Customers
       WHERE 
         IsActive = 1 AND (
-          Name LIKE '%' + ${q} + '%' OR
-          ContactName LIKE '%' + ${q} + '%' OR
-          Phone LIKE '%' + ${q} + '%' OR
-          Email LIKE '%' + ${q} + '%' OR
-          PAN LIKE '%' + ${q} + '%' OR
-          GSTTIN LIKE '%' + ${q} + '%'
+          Name LIKE '%' + @q + '%' OR
+          ContactName LIKE '%' + @q + '%' OR
+          Phone LIKE '%' + @q + '%' OR
+          Email LIKE '%' + @q + '%' OR
+          PAN LIKE '%' + @q + '%' OR
+          GSTTIN LIKE '%' + @q + '%'
         )
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const request = new sql.Request();
+    request.input("q", sql.VarChar, q);
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
 

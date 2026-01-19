@@ -18,7 +18,14 @@ exports.getAllTerritories = async (req, res) => {
     `;
 
     // Fetch paginated data
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "t.id";
+    if (sortBy === "name") sortColumn = "t.territoryDescription";
+    else if (sortBy === "regionName") sortColumn = "r.regionName";
+
+    const query = `
       SELECT 
         t.id,
         t.territoryDescription,
@@ -34,10 +41,12 @@ exports.getAllTerritories = async (req, res) => {
       FROM Territories t
       LEFT JOIN Regions r ON t.regionId = r.regionId
       WHERE t.isActive = 1
-      ORDER BY t.id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -147,7 +156,17 @@ exports.searchTerritories = async (req, res) => {
     const { q } = req.query;
   
     try {
-      const result = await sql.query`
+      const sortBy = req.query.sortBy || "id";
+      const order = (req.query.order || "ASC").toUpperCase();
+      
+      let sortColumn = "t.id";
+      if (sortBy === "name") sortColumn = "t.territoryDescription";
+      else if (sortBy === "regionName") sortColumn = "r.regionName";
+
+      const request = new sql.Request();
+      request.input('q', sql.VarChar, q);
+
+      const query = `
         SELECT 
           t.id,
           t.territoryDescription,
@@ -165,11 +184,13 @@ exports.searchTerritories = async (req, res) => {
         WHERE 
           t.isActive = 1 AND
           (
-            t.territoryDescription LIKE '%' + ${q} + '%' OR
-            r.regionName LIKE '%' + ${q} + '%'
+            t.territoryDescription LIKE '%' + @q + '%' OR
+            r.regionName LIKE '%' + @q + '%'
           )
-        ORDER BY t.id DESC
+        ORDER BY ${sortColumn} ${order}
       `;
+  
+      const result = await request.query(query);
   
       res.status(200).json(result.recordset);
     } catch (error) {

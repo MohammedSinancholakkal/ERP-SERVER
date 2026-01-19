@@ -8,6 +8,17 @@ exports.getAllAttendance = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit; 
+    const sortBy = req.query.sortBy;
+    const order = req.query.order === 'desc' ? 'DESC' : 'ASC';
+
+    let sortColumn = 'Id'; // Default sort
+    switch (sortBy) {
+        case 'id': sortColumn = 'Id'; break;
+        case 'employeeId': sortColumn = 'EmployeeId'; break;
+        case 'checkIn': sortColumn = 'CheckIn'; break;
+        case 'checkOut': sortColumn = 'CheckOut'; break;
+        default: sortColumn = 'Id';
+    }
 
     // Total Count
     const totalResult = await sql.query`
@@ -17,7 +28,7 @@ exports.getAllAttendance = async (req, res) => {
     `;
   
     // Paginated List
-    const result = await sql.query`
+    const query = `
       SELECT
         Id AS id,
         EmployeeId AS employeeId,
@@ -25,10 +36,12 @@ exports.getAllAttendance = async (req, res) => {
         CheckOut AS checkOut
       FROM Attendance
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

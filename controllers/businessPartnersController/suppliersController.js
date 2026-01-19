@@ -16,8 +16,19 @@ exports.getAllSuppliers = async (req, res) => {
       WHERE IsActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "name") sortColumn = "CompanyName"; // Maps 'name' to 'CompanyName'
+    else if (sortBy === "companyName") sortColumn = "CompanyName";
+    else if (sortBy === "email") sortColumn = "Email";
+    else if (sortBy === "phone") sortColumn = "Phone";
+    else if (sortBy === "pan") sortColumn = "PAN";
+    else if (sortBy === "gstin") sortColumn = "GSTIN";
+
     // PAGINATED FULL SUPPLIER LIST
-    const result = await sql.query`
+    const query = `
       SELECT
         Id AS id,
         CompanyName AS companyName,
@@ -26,7 +37,8 @@ exports.getAllSuppliers = async (req, res) => {
         CityId AS cityId,
         ContactName AS contactName,
         ContactTitle AS contactTitle,
-        Address AS address,
+        AddressLine1 AS addressLine1,
+        AddressLine2 AS addressLine2,
         RegionId AS regionId,
         PostalCode AS postalCode,
         Phone AS phone,
@@ -41,10 +53,16 @@ exports.getAllSuppliers = async (req, res) => {
         GSTIN AS gstin
       FROM Suppliers
       WHERE IsActive = 1
-      ORDER BY Id DESC
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      ORDER BY ${sortColumn} ${order}
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
+
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -75,7 +93,8 @@ exports.getSupplierById = async (req, res) => {
         CityId AS cityId,
         ContactName AS contactName,
         ContactTitle AS contactTitle,
-        Address AS address,
+        AddressLine1 AS addressLine1,
+        AddressLine2 AS addressLine2,
         RegionId AS regionId,
         PostalCode AS postalCode,
         Phone AS phone,
@@ -116,7 +135,6 @@ exports.addSupplier = async (req, res) => {
     cityId,
     contactName,
     contactTitle,
-    address,
     regionId,
     postalCode,
     phone,
@@ -129,14 +147,16 @@ exports.addSupplier = async (req, res) => {
     orderBooker,
     pan,
     gstin,
-    userId
+    userId,
+    addressLine1,
+    addressLine2
   } = req.body;
 
   try {
     await sql.query`
       INSERT INTO Suppliers (
         CompanyName, CountryId, StateId, CityId,
-        ContactName, ContactTitle, Address, RegionId,
+        ContactName, ContactTitle, AddressLine1, AddressLine2, RegionId,
         PostalCode, Phone, Fax, Website,
         Email, EmailAddress, PreviousCreditBalance,
         SupplierGroupId,
@@ -144,7 +164,7 @@ exports.addSupplier = async (req, res) => {
       )
       VALUES (
         ${companyName}, ${countryId}, ${stateId}, ${cityId},
-        ${contactName}, ${contactTitle}, ${address}, ${regionId},
+        ${contactName}, ${contactTitle}, ${addressLine1}, ${addressLine2}, ${regionId},
         ${postalCode}, ${phone}, ${fax}, ${website},
         ${email}, ${emailAddress}, ${previousCreditBalance},
         ${supplierGroupId},
@@ -173,7 +193,6 @@ exports.updateSupplier = async (req, res) => {
     cityId,
     contactName,
     contactTitle,
-    address,
     regionId,
     postalCode,
     phone,
@@ -186,7 +205,9 @@ exports.updateSupplier = async (req, res) => {
     orderBooker,
     pan,
     gstin,
-    userId
+    userId,
+    addressLine1,
+    addressLine2
   } = req.body;
 
   try {
@@ -199,7 +220,8 @@ exports.updateSupplier = async (req, res) => {
         CityId = ${cityId},
         ContactName = ${contactName},
         ContactTitle = ${contactTitle},
-        Address = ${address},
+        AddressLine1 = ${addressLine1},
+        AddressLine2 = ${addressLine2},
         RegionId = ${regionId},
         PostalCode = ${postalCode},
         Phone = ${phone},
@@ -259,7 +281,16 @@ exports.searchSuppliers = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "name") sortColumn = "CompanyName";
+    else if (sortBy === "companyName") sortColumn = "CompanyName";
+    else if (sortBy === "email") sortColumn = "Email";
+    else if (sortBy === "phone") sortColumn = "Phone";
+
+    const query = `
       SELECT
         Id AS id,
         CompanyName AS companyName,
@@ -268,7 +299,8 @@ exports.searchSuppliers = async (req, res) => {
         CityId AS cityId,
         ContactName AS contactName,
         ContactTitle AS contactTitle,
-        Address AS address,
+        AddressLine1 AS addressLine1,
+        AddressLine2 AS addressLine2,
         RegionId AS regionId,
         PostalCode AS postalCode,
         Phone AS phone,
@@ -284,13 +316,18 @@ exports.searchSuppliers = async (req, res) => {
       FROM Suppliers
       WHERE 
         IsActive = 1 AND (
-          CompanyName LIKE '%' + ${q} + '%' OR
-          ContactName LIKE '%' + ${q} + '%' OR
-          Phone LIKE '%' + ${q} + '%' OR
-          Email LIKE '%' + ${q} + '%'
+          CompanyName LIKE '%' + @q + '%' OR
+          ContactName LIKE '%' + @q + '%' OR
+          Phone LIKE '%' + @q + '%' OR
+          Email LIKE '%' + @q + '%'
         )
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const request = new sql.Request();
+    request.input("q", sql.VarChar, q);
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {
@@ -315,7 +352,8 @@ exports.getInactiveSuppliers = async (req, res) => {
         CityId AS cityId,
         ContactName AS contactName,
         ContactTitle AS contactTitle,
-        Address AS address,
+        AddressLine1 AS addressLine1,
+        AddressLine2 AS addressLine2,
         RegionId AS regionId,
         PostalCode AS postalCode,
         Phone AS phone,

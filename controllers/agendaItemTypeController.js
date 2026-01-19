@@ -17,8 +17,12 @@ exports.getAllAgendaItemTypes = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    // Fetch paginated records
-    const result = await sql.query`
+    // Paginated rows  
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+
+    const query = `
       SELECT 
         Id,
         Name,
@@ -28,10 +32,12 @@ exports.getAllAgendaItemTypes = async (req, res) => {
         UpdateUserId
       FROM AgendaItemTypes
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -123,12 +129,18 @@ exports.searchAgendaItemTypes = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+
+    const query = `
       SELECT Id, Name
       FROM AgendaItemTypes
-      WHERE IsActive = 1 AND Name LIKE '%' + ${q} + '%'
-      ORDER BY Id DESC
+      WHERE IsActive = 1 AND Name LIKE '%${q}%'
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

@@ -18,7 +18,28 @@ exports.getAllPurchaseOrders = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "p.InsertDate"; 
+    
+    // Mapping
+    switch (sortBy) {
+        case "id": sortColumn = "p.Id"; break;
+        case "supplierName": sortColumn = "s.CompanyName"; break;
+        case "poNumber": sortColumn = "p.PONumber"; break;
+        case "date": sortColumn = "p.Date"; break;
+        case "grandTotal": sortColumn = "p.GrandTotal"; break;
+        case "vehicleNo": sortColumn = "p.VehicleNo"; break;
+        default: sortColumn = "p.InsertDate"; 
+    }
+
+    if (!req.query.sortBy) {
+        sortColumn = "p.Id";
+         // Default order is ASC if unspecified (handled above defaults)
+    }
+
+    const query = `
       SELECT
         p.Id AS id,
         p.SupplierId AS supplierId,
@@ -38,17 +59,18 @@ exports.getAllPurchaseOrders = async (req, res) => {
         p.CGSTRate AS cgstRate,
         p.SGSTRate AS sgstRate,
         p.NoTax AS noTax,
-        p.NoTax AS noTax,
         p.[Change] AS change,
         p.VehicleNo AS vehicleNo,
         p.Details AS details
       FROM PurchaseOrders p
       LEFT JOIN Suppliers s ON p.SupplierId = s.Id
       WHERE p.IsActive = 1
-      ORDER BY p.InsertDate DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

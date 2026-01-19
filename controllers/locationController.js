@@ -25,6 +25,16 @@ exports.getAllLocations = async (req, res) => {
       WHERE ${whereClause}
     `);
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "L.Id";
+    if (sortBy === "name") sortColumn = "L.Name";
+    else if (sortBy === "CountryName") sortColumn = "C.Name";
+    else if (sortBy === "StateName") sortColumn = "S.Name";
+    else if (sortBy === "CityName") sortColumn = "CI.Name";
+    else if (sortBy === "id") sortColumn = "L.Id";
+
     const result = await sql.query(`
       SELECT 
         L.Id,
@@ -47,7 +57,7 @@ exports.getAllLocations = async (req, res) => {
       LEFT JOIN States S ON L.StateId = S.Id
       LEFT JOIN Cities CI ON L.CityId = CI.Id
       WHERE ${whereClause}
-      ORDER BY L.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `);
@@ -161,7 +171,19 @@ exports.searchLocations = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "L.Id";
+    if (sortBy === "name") sortColumn = "L.Name";
+    else if (sortBy === "CountryName") sortColumn = "C.Name";
+    else if (sortBy === "StateName") sortColumn = "S.Name";
+    else if (sortBy === "CityName") sortColumn = "CI.Name";
+
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, q);
+
+    const query = `
       SELECT 
         L.Id,
         L.Name,
@@ -174,13 +196,15 @@ exports.searchLocations = async (req, res) => {
       LEFT JOIN Cities CI ON L.CityId = CI.Id
       WHERE L.IsActive = 1
         AND (
-            L.Name LIKE '%' + ${q} + '%' OR
-            C.Name LIKE '%' + ${q} + '%' OR
-            S.Name LIKE '%' + ${q} + '%' OR
-            CI.Name LIKE '%' + ${q} + '%'
+            L.Name LIKE '%' + @q + '%' OR
+            C.Name LIKE '%' + @q + '%' OR
+            S.Name LIKE '%' + @q + '%' OR
+            CI.Name LIKE '%' + @q + '%'
         )
-      ORDER BY L.Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
 

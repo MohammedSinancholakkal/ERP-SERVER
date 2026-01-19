@@ -18,7 +18,12 @@ exports.getAllMeetingTypes = async (req, res) => {
     `;
 
     // Fetch paginated rows
-    const result = await sql.query`
+    // Fetch paginated rows
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+    
+    const query = `
       SELECT 
         Id,
         Name,
@@ -28,10 +33,12 @@ exports.getAllMeetingTypes = async (req, res) => {
         UpdateUserId
       FROM MeetingTypes
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -123,12 +130,18 @@ exports.searchMeetingTypes = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+
+    const query = `
       SELECT Id, Name
       FROM MeetingTypes
-      WHERE IsActive = 1 AND Name LIKE '%' + ${q} + '%'
-      ORDER BY Id DESC
+      WHERE IsActive = 1 AND Name LIKE '%${q}%'
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

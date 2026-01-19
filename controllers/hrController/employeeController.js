@@ -127,6 +127,22 @@ exports.getAllEmployees = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
+    const sortBy = req.query.sortBy;
+    const order = req.query.order === 'desc' ? 'DESC' : 'ASC';
+
+    let sortColumn = 'e.Id';
+    switch (sortBy) {
+        case 'id': sortColumn = 'e.Id'; break;
+        case 'firstName': sortColumn = 'e.FirstName'; break; // Could concat first+last theoretically, but simple is usually fine
+        case 'lastName': sortColumn = 'e.LastName'; break;
+        case 'name': sortColumn = 'e.FirstName'; break; // Fallback for combined name
+        case 'phone': sortColumn = 'e.Phone'; break;
+        case 'email': sortColumn = 'e.Email'; break;
+        case 'designation': sortColumn = 'dsg.Designation'; break;
+        case 'department': sortColumn = 'dept.Department'; break;
+        case 'basicSalary': sortColumn = 'e.BasicSalary'; break;
+        default: sortColumn = 'e.Id';
+    }
   
     // Count total
     const total = await sql.query`
@@ -135,7 +151,7 @@ exports.getAllEmployees = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const employees = await sql.query`
+    const query = `
       SELECT 
         e.Id,
         e.FirstName,
@@ -162,9 +178,11 @@ exports.getAllEmployees = async (req, res) => {
       LEFT JOIN Designations dsg ON e.DesignationId = dsg.Id
       LEFT JOIN Departments dept ON e.DepartmentId = dept.Id
       WHERE e.IsActive = 1
-      ORDER BY e.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const employees = await sql.query(query);
 
     res.status(200).json({
       total: total.recordset[0].Total,

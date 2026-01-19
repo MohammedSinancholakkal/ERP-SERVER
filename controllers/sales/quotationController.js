@@ -49,33 +49,62 @@ exports.getAllQuotations = async (req, res) => {
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
     // select all required columns and alias to camelCase used in frontend
-    const result = await sql.query`
+    // select all required columns and alias to camelCase used in frontend
+    
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Q.InsertDate"; 
+    
+    // Mapping
+    // Note: To sort by Customer Name, we must JOIN Customers
+    switch (sortBy) {
+        case "id": sortColumn = "Q.Id"; break;
+        case "customerName": sortColumn = "C.Name"; break;
+        case "quotationNo": sortColumn = "Q.QuotationNo"; break;
+        case "date": sortColumn = "Q.Date"; break;
+        case "expiryDate": sortColumn = "Q.ExpiryDate"; break;
+        case "grandTotal": sortColumn = "Q.GrandTotal"; break;
+        case "vehicleNo": sortColumn = "Q.VehicleNo"; break;
+        default: sortColumn = "Q.InsertDate";
+    }
+
+    if (!req.query.sortBy) {
+        sortColumn = "Q.Id";
+        // Default order is ASC if unspecified (handled above defaults)
+    }
+
+    const query = `
       SELECT
-        Id AS id,
-        QuotationNo AS quotationNo,
-        CustomerId AS customerId,
-        Date AS date,
-        ExpiryDate AS expiryDate,
-        Discount AS discount,
-        TotalDiscount AS totalDiscount,
-        TotalTax AS totalTax,
-        NoTax AS noTax,
-        ShippingCost AS shippingCost,
-        GrandTotal AS grandTotal,
-        NetTotal AS netTotal,
-        Details AS details,
-        VehicleNo AS vehicleNo,
-        TaxTypeId AS taxTypeId,
-        IGSTRate AS igstRate,
-        CGSTRate AS cgstRate,
-        SGSTRate AS sgstRate,
-        InsertDate AS insertDate
-      FROM Quotations
-      WHERE IsActive = 1
-      ORDER BY InsertDate DESC
+        Q.Id AS id,
+        Q.QuotationNo AS quotationNo,
+        Q.CustomerId AS customerId,
+        C.Name AS customerName,
+        Q.Date AS date,
+        Q.ExpiryDate AS expiryDate,
+        Q.Discount AS discount,
+        Q.TotalDiscount AS totalDiscount,
+        Q.TotalTax AS totalTax,
+        Q.NoTax AS noTax,
+        Q.ShippingCost AS shippingCost,
+        Q.GrandTotal AS grandTotal,
+        Q.NetTotal AS netTotal,
+        Q.Details AS details,
+        Q.VehicleNo AS vehicleNo,
+        Q.TaxTypeId AS taxTypeId,
+        Q.IGSTRate AS igstRate,
+        Q.CGSTRate AS cgstRate,
+        Q.SGSTRate AS sgstRate,
+        Q.InsertDate AS insertDate
+      FROM Quotations Q
+      LEFT JOIN Customers C ON Q.CustomerId = C.Id
+      WHERE Q.IsActive = 1
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       totalRecords: total,

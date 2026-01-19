@@ -16,18 +16,28 @@ exports.getAllUnits = async (req, res) => {
       WHERE IsActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "name") sortColumn = "Name";
+    else if (sortBy === "description") sortColumn = "Description";
+
     // PAGINATED LIST
-    const result = await sql.query`
+    // PAGINATED LIST
+    const query = `
       SELECT 
         Id AS id,
         Name AS name,
         Description AS description
       FROM Units
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

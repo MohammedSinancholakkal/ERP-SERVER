@@ -233,10 +233,15 @@ exports.getAllCities = async (req, res) => {
       INNER JOIN States s ON c.stateId = s.id
       WHERE c.isActive = 1
       ORDER BY ${sortColumn} ${order}
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
-    const result = await sql.query(query);
+    
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     // respond
     res.status(200).json({

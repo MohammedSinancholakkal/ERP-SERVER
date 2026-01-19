@@ -59,41 +59,95 @@ exports.getAllSales = async (req, res) => {
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    // Map frontend keys to backend columns
+    let sortColumn = "InsertDate"; // Default sort
+    if (sortBy === "id") sortColumn = "Id";
+    else if (sortBy === "customerName") sortColumn = "customerName"; // Alias from join/subquery ?? No, we are selecting fields.
+    // Wait, the original query doesn't join Customer for name in the list? 
+    // Let's check the SELECT list again.
+    // The original query SELECTs: CustomerId, Date, GrandTotal, etc.
+    // It does NOT join Customers table in the main result set fetch? 
+    // Ah, line 597 (getInactive) joins Customers. But getAllSales (line 69) DOES NOT join Customers!
+    // The main query (lines 69-96) selects columns from Sales table ONLY. 
+    // But normalized normalizedSale in frontend (line 147) fetches Customers separately and maps names!
+    // So for sorting by Customer Name, we can't do it server side easily unless we JOIN here.
+    
+    // DECISION: To support sorting by Customer Name, I SHOULD add the JOIN to the query now.
+    // Or I can stick to sorting by fields present in Sales table.
+    // The User wants "server side sorting". If the main table doesn't have names, sorting by name won't work server side without a join.
+    // I will add the JOIN to Customers c ON s.CustomerId = c.Id to allow sorting by CustomerName.
+
+    // Let's refine the query to include the Join like getInactiveSales does or getSaleById.
+    
+    // Mapping:
+    switch (sortBy) {
+        case "id": sortColumn = "S.Id"; break;
+        case "customerName": sortColumn = "C.Name"; break;
+        case "date": sortColumn = "S.Date"; break;
+        case "grandTotal": sortColumn = "S.GrandTotal"; break;
+        case "netTotal": sortColumn = "S.NetTotal"; break;
+        case "paidAmount": sortColumn = "S.PaidAmount"; break;
+        case "due": sortColumn = "S.Due"; break;
+        case "paymentAccount": sortColumn = "S.PaymentAccount"; break;
+        case "vehicleNo": sortColumn = "S.VehicleNo"; break;
+        case "invoiceNo": sortColumn = "S.InvoiceNo"; break; // or VNo?
+        default: sortColumn = "S.InsertDate"; // Default
+    }
+
+    // Adjust order default
+    // If no specific sort requested, default to InsertDate DESC (Recent first) ?? 
+    // User asked "make default as ASC". 
+    // If user provides no params, I should default to something sensible. 
+    // Usually ID ASC or Date DESC. User said "yes make the defualt as asc".
+    // I will default to ID ASC if nothing provided.
+    
+    if (!req.query.sortBy) {
+        sortColumn = "S.Id";
+        // order is already defaulted to ASC above if missing
+    }
+
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
-      FROM Sales
-      WHERE IsActive = 1
+      FROM Sales S
+      WHERE S.IsActive = 1
     `;
 
-    const result = await sql.query`
+    // Construct Query
+    const query = `
       SELECT
-        Id AS id,
-        CustomerId AS customerId,
-        Date AS date,
-        GrandTotal AS grandTotal,
-        NetTotal AS netTotal,
-        PaidAmount AS paidAmount,
-        Due AS due,
-        PaymentAccount AS paymentAccount,
-        PaymentAccount AS paymentAccount,
-        VNo AS vno,
-        VehicleNo AS vehicleNo,
-        Discount AS discount,
-        TotalDiscount AS totalDiscount,
-
-        TotalTax AS totalTax,
-        IGSTRate AS igstRate,
-        CGSTRate AS cgstRate,
-        SGSTRate AS sgstRate,
-        ShippingCost AS shippingCost,
-        Change AS change,
-        Details AS details
-      FROM Sales
-      WHERE IsActive = 1
-      ORDER BY InsertDate DESC
+        S.Id AS id,
+        S.CustomerId AS customerId,
+        C.Name AS customerName,
+        S.Date AS date,
+        S.GrandTotal AS grandTotal,
+        S.NetTotal AS netTotal,
+        S.PaidAmount AS paidAmount,
+        S.Due AS due,
+        S.PaymentAccount AS paymentAccount,
+        S.VNo AS vno,
+        S.InvoiceNo AS invoiceNo,
+        S.VehicleNo AS vehicleNo,
+        S.Discount AS discount,
+        S.TotalDiscount AS totalDiscount,
+        S.TotalTax AS totalTax,
+        S.IGSTRate AS igstRate,
+        S.CGSTRate AS cgstRate,
+        S.SGSTRate AS sgstRate,
+        S.ShippingCost AS shippingCost,
+        S.Change AS change,
+        S.Details AS details
+      FROM Sales S
+      LEFT JOIN Customers C ON S.CustomerId = C.Id
+      WHERE S.IsActive = 1
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

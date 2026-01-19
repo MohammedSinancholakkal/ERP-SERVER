@@ -15,7 +15,11 @@ exports.getAllExpenseTypes = async (req, res) => {
       WHERE isActive = 1
     `;  
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "typeName" : "typeId";
+
+    const query = `
       SELECT 
         typeId,
         typeName,
@@ -28,10 +32,12 @@ exports.getAllExpenseTypes = async (req, res) => {
         isActive
       FROM ExpenseTypes
       WHERE isActive = 1
-      ORDER BY typeId DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -144,7 +150,11 @@ exports.searchExpenseTypes = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "typeName" : "typeId";
+
+    const query = `
       SELECT 
         typeId,
         typeName,
@@ -158,9 +168,11 @@ exports.searchExpenseTypes = async (req, res) => {
       FROM ExpenseTypes
       WHERE 
         isActive = 1 AND
-        typeName LIKE '%' + ${q} + '%'
-      ORDER BY typeId DESC
+        typeName LIKE '%${q}%'
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

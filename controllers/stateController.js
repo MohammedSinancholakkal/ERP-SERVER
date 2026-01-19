@@ -186,10 +186,15 @@ exports.getAllStates = async (req, res) => {
       INNER JOIN Countries c ON s.countryId = c.id
       WHERE s.isActive = 1
       ORDER BY ${sortColumn} ${order}
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
-    const result = await sql.query(query);
+
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalCount.recordset[0].Total,

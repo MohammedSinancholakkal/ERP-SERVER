@@ -8,6 +8,18 @@ exports.getAllDepartments = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
+    const sortBy = req.query.sortBy;
+    const order = req.query.order === 'desc' ? 'DESC' : 'ASC';
+
+    let sortColumn = 'd.Id';
+    switch (sortBy) {
+        case 'id': sortColumn = 'd.Id'; break;
+        case 'department': sortColumn = 'd.Department'; break; // Note: Frontend likely capitalizes this key?
+        case 'name': sortColumn = 'd.Department'; break;
+        case 'description': sortColumn = 'd.Description'; break;
+        case 'parentName': sortColumn = 'p.Department'; break;
+        default: sortColumn = 'd.Id';
+    }
 
     // TOTAL COUNT  
     const totalResult = await sql.query`  
@@ -17,7 +29,7 @@ exports.getAllDepartments = async (req, res) => {
     `;
   
     // PAGINATED LIST WITH PARENT NAME + PARENT ID
-    const result = await sql.query`
+    const query = `
       SELECT 
         d.Id AS id,
         d.Department AS department,
@@ -27,10 +39,12 @@ exports.getAllDepartments = async (req, res) => {
       FROM Departments d
       LEFT JOIN Departments p ON d.ParentDepartmentId = p.Id
       WHERE d.IsActive = 1
-      ORDER BY d.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

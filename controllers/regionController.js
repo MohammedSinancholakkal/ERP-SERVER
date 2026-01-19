@@ -15,7 +15,11 @@ exports.getAllRegions = async (req, res) => {
       WHERE isActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "regionName" : "regionId";
+
+    const query = `
       SELECT 
         regionId, 
         regionName, 
@@ -26,10 +30,12 @@ exports.getAllRegions = async (req, res) => {
         updateDate
       FROM Regions
       WHERE isActive = 1
-      ORDER BY regionId DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -156,7 +162,14 @@ exports.searchRegions = async (req, res) => {
     const { q } = req.query;
   
     try {
-      const result = await sql.query`
+      const sortBy = req.query.sortBy || "id";
+      const order = (req.query.order || "ASC").toUpperCase();
+      const sortColumn = sortBy === "name" ? "regionName" : "regionId";
+
+      const request = new sql.Request();
+      request.input('q', sql.VarChar, q);
+
+      const query = `
         SELECT 
           regionId,
           regionName,
@@ -168,9 +181,11 @@ exports.searchRegions = async (req, res) => {
         FROM Regions
         WHERE 
           isActive = 1 AND
-          regionName LIKE '%' + ${q} + '%'
-        ORDER BY regionId DESC
+          regionName LIKE '%' + @q + '%'
+        ORDER BY ${sortColumn} ${order}
       `;
+  
+      const result = await request.query(query);
   
       res.status(200).json(result.recordset);
     } catch (error) {

@@ -8,6 +8,19 @@ exports.getAllPayrolls = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
+    const sortBy = req.query.sortBy;
+    const order = req.query.order === 'desc' ? 'DESC' : 'ASC';
+
+    let sortColumn = 'InsertDate'; // Default sort logic was InsertDate DESC
+    switch (sortBy) {
+        case 'id': sortColumn = 'Id'; break;
+        case 'number': sortColumn = 'Number'; break;
+        case 'description': sortColumn = 'Description'; break;
+        case 'paymentDate': sortColumn = 'PaymentDate'; break;
+        case 'totalPaymentAmount': sortColumn = 'TotalPaymentAmount'; break;
+        case 'currencyName': sortColumn = 'CurrencyName'; break; // Note: Column is CurrencyName
+        default: sortColumn = 'InsertDate';
+    }
 
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
@@ -15,7 +28,7 @@ exports.getAllPayrolls = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`  
+    const query = `
       SELECT
         Id AS id,
         Number,
@@ -29,10 +42,12 @@ exports.getAllPayrolls = async (req, res) => {
         CurrencyName
       FROM Payroll
       WHERE IsActive = 1
-      ORDER BY InsertDate DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

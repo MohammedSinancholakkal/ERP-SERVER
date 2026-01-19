@@ -16,8 +16,23 @@ exports.getAllProducts = async (req, res) => {
       WHERE IsActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "p.Id";
+    if (sortBy === "productName") sortColumn = "p.ProductName";
+    else if (sortBy === "sn") sortColumn = "p.SN";
+    else if (sortBy === "barcode") sortColumn = "p.Barcode";
+    else if (sortBy === "categoryName") sortColumn = "c.Name";
+    else if (sortBy === "unitName") sortColumn = "u.Name";
+    else if (sortBy === "brandName") sortColumn = "b.Name";
+    else if (sortBy === "hsnCode") sortColumn = "p.HSNCode";
+    else if (sortBy === "model") sortColumn = "p.Model";
+
     // Paginated list with joins
-    const result = await sql.query`
+    // Paginated list with joins
+    // Paginated list with joins
+    const query = `
       SELECT 
         p.Id AS id,
         p.Barcode,
@@ -59,10 +74,12 @@ exports.getAllProducts = async (req, res) => {
       LEFT JOIN Suppliers s WITH (NOLOCK) ON p.SupplierId = s.Id
       LEFT JOIN TaxPercentages tp WITH (NOLOCK) ON p.TaxPercentageId = tp.id
       WHERE p.IsActive = 1
-      ORDER BY p.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

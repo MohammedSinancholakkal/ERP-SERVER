@@ -29,6 +29,15 @@ exports.getAllWarehouses = async (req, res) => {
     `);
 
     // Fetch records
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "W.Id";
+    if (sortBy === "name") sortColumn = "W.Name";
+    else if (sortBy === "CountryName") sortColumn = "C.Name";
+    else if (sortBy === "StateName") sortColumn = "S.Name";
+    else if (sortBy === "CityName") sortColumn = "CI.Name";
+
     const result = await sql.query(`
       SELECT 
         W.Id,
@@ -56,7 +65,7 @@ exports.getAllWarehouses = async (req, res) => {
       LEFT JOIN States S ON W.StateId = S.Id
       LEFT JOIN Cities CI ON W.CityId = CI.Id
       WHERE ${whereClause}
-      ORDER BY W.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `);
@@ -171,7 +180,19 @@ exports.searchWarehouses = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "W.Id";
+    if (sortBy === "name") sortColumn = "W.Name";
+    else if (sortBy === "CountryName") sortColumn = "C.Name";
+    else if (sortBy === "StateName") sortColumn = "S.Name";
+    else if (sortBy === "CityName") sortColumn = "CI.Name";
+
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, q);
+
+    const query = `
       SELECT 
         W.Id,
         W.Name,
@@ -186,15 +207,17 @@ exports.searchWarehouses = async (req, res) => {
       LEFT JOIN Cities CI ON W.CityId = CI.Id
       WHERE W.IsActive = 1
         AND (
-             W.Name LIKE '%' + ${q} + '%' OR
-             W.Description LIKE '%' + ${q} + '%' OR
-             C.Name LIKE '%' + ${q} + '%' OR
-             S.Name LIKE '%' + ${q} + '%' OR
-             CI.Name LIKE '%' + ${q} + '%' OR
-             W.Phone LIKE '%' + ${q} + '%'
+             W.Name LIKE '%' + @q + '%' OR
+             W.Description LIKE '%' + @q + '%' OR
+             C.Name LIKE '%' + @q + '%' OR
+             S.Name LIKE '%' + @q + '%' OR
+             CI.Name LIKE '%' + @q + '%' OR
+             W.Phone LIKE '%' + @q + '%'
         )
-      ORDER BY W.Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

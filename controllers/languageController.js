@@ -15,17 +15,31 @@ exports.getAllLanguages = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "Id";
+    if (sortBy === "languageName") sortColumn = "LanguageName";
+    if (sortBy === "languageId") sortColumn = "LanguageId";
+    if (sortBy === "id") sortColumn = "Id";
+
+    const query = `
       SELECT 
         Id AS id,
         LanguageId AS languageId,
         LanguageName AS languageName
       FROM Languages
       WHERE IsActive = 1
-      ORDER BY Id DESC
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      ORDER BY ${sortColumn} ${order}
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
+
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -116,6 +130,10 @@ exports.searchLanguages = async (req, res) => {
   const { q } = req.query;
 
   try {
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "LanguageName" : "Id";
+
     const result = await sql.query`
       SELECT 
         Id AS id,
@@ -127,7 +145,7 @@ exports.searchLanguages = async (req, res) => {
           LanguageId LIKE '%' + ${q} + '%'
           OR LanguageName LIKE '%' + ${q} + '%'
         )
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
 
     res.status(200).json(result.recordset);

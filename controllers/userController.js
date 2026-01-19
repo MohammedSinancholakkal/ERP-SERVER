@@ -398,14 +398,27 @@ exports.getAllUsers = async (req, res) => {
       SELECT COUNT(*) AS Total FROM Users WHERE isActive = 1 AND username != 'superadmin'
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "userId";
+    const order = (req.query.order || "DESC").toUpperCase();
+
+    let sortColumn = "userId";
+    switch (sortBy) {
+        case "username": sortColumn = "username"; break;
+        case "displayName": sortColumn = "displayName"; break;
+        case "email": sortColumn = "email"; break;
+        case "source": sortColumn = "source"; break;
+        case "id": sortColumn = "userId"; break;
+        default: sortColumn = "userId";
+    }
+
+    const result = await sql.query(`
       SELECT 
         userId, username, displayName, email, source, userImage, insertDate, updateDate
       FROM Users
       WHERE isActive = 1 AND username != 'superadmin'
-      ORDER BY userId DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
-    `;
+    `);
 
     res.status(200).json({
       total: total.recordset[0].Total,

@@ -18,7 +18,11 @@ exports.getAllSupplierGroups = async (req, res) => {
     `;
 
     // Fetch paginated records
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "GroupName" : "Id";
+
+    const query = `
       SELECT 
         Id,
         GroupName,
@@ -30,10 +34,12 @@ exports.getAllSupplierGroups = async (req, res) => {
         IsActive
       FROM SupplierGroups
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -126,7 +132,11 @@ exports.searchSupplierGroups = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "GroupName" : "Id";
+
+    const query = `
       SELECT 
         Id,
         GroupName,
@@ -135,11 +145,13 @@ exports.searchSupplierGroups = async (req, res) => {
       WHERE 
         IsActive = 1 AND
         (
-          GroupName LIKE '%' + ${q} + '%' OR
-          Description LIKE '%' + ${q} + '%'
+          GroupName LIKE '%${q}%' OR
+          Description LIKE '%${q}%'
         )
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

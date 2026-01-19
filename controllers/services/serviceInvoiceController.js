@@ -15,7 +15,25 @@ exports.getAllServiceInvoices = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "DESC").toUpperCase();
+
+    // Map frontend specific keys to database columns
+    let sortColumn = "si.Id"; // Default
+
+    switch (sortBy) {
+        case "customerName": sortColumn = "c.Name"; break;
+        case "employeeName": sortColumn = "e.FirstName"; break; // Simplified for sorting
+        case "date": sortColumn = "si.Date"; break;
+        case "grandTotal": sortColumn = "si.GrandTotal"; break;
+        case "netTotal": sortColumn = "si.NetTotal"; break;
+        case "paidAmount": sortColumn = "si.PaidAmount"; break;
+        case "due": sortColumn = "si.Due"; break;
+        case "id": sortColumn = "si.Id"; break;
+        default: sortColumn = "si.Id";
+    }
+
+    const query = `
       SELECT
         si.Id AS id,
         si.CustomerId AS customerId,
@@ -44,10 +62,16 @@ exports.getAllServiceInvoices = async (req, res) => {
       LEFT JOIN Customers c ON si.CustomerId = c.Id
       LEFT JOIN Employees e ON si.EmployeeId = e.Id
       WHERE si.IsActive = 1
-      ORDER BY si.InsertDate DESC
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
+      ORDER BY ${sortColumn} ${order}
+      OFFSET @offset ROWS
+      FETCH NEXT @limit ROWS ONLY
     `;
+
+    const request = new sql.Request();
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -187,7 +211,7 @@ exports.addServiceInvoice = async (req, res) => {
     paymentAccount,
     details,
     vno,
-    items,   // ServiceInvoiceDetails array
+    items,   
     insertUserId
   } = req.body;
 

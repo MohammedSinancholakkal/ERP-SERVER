@@ -15,7 +15,19 @@ exports.getAllDamaged = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const list = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "D.Id";
+    if (sortBy === "code") sortColumn = "D.Code";
+    else if (sortBy === "name") sortColumn = "D.Name";
+    else if (sortBy === "categoryName") sortColumn = "C.Name";
+    else if (sortBy === "productName") sortColumn = "P.ProductName";
+    else if (sortBy === "warehouseName") sortColumn = "W.Name";
+    else if (sortBy === "quantity") sortColumn = "D.Quantity";
+    else if (sortBy === "vNo") sortColumn = "D.VNo";
+
+    const query = `
       SELECT 
         D.Id,
         D.Code,
@@ -44,10 +56,12 @@ exports.getAllDamaged = async (req, res) => {
       LEFT JOIN Categories C ON D.CategoryId = C.Id
       LEFT JOIN Warehouses W ON D.WarehouseId = W.Id
       WHERE D.IsActive = 1
-      ORDER BY D.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const list = await sql.query(query);
 
     res.json({
       total: total.recordset?.[0]?.Total || 0,

@@ -11,13 +11,24 @@ exports.getAllGoodsIssues = async (req, res) => {
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "GI.InsertDate"; // Default
+    if (sortBy === "id") sortColumn = "GI.Id";
+    else if (sortBy === "date") sortColumn = "GI.Date";
+    else if (sortBy === "totalQuantity") sortColumn = "GI.TotalQuantity";
+    else if (sortBy === "customer") sortColumn = "CustomerName";
+    else if (sortBy === "saleInvoice") sortColumn = "SaleInvoice";
+    else if (sortBy === "employee") sortColumn = "EmployeeName";
+
     const totalResult = await sql.query`  
       SELECT COUNT(*) AS Total
       FROM GoodsIssue
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const query = `
       SELECT
         GI.Id AS id,
         GI.Date,
@@ -40,10 +51,12 @@ exports.getAllGoodsIssues = async (req, res) => {
       LEFT JOIN Customers C ON GI.CustomerId = C.Id
 
       WHERE GI.IsActive = 1
-      ORDER BY GI.InsertDate DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

@@ -15,14 +15,20 @@ exports.getAllServices = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "ServiceName" : "Id";
+
+    const query = `
       SELECT *
       FROM Services
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -141,15 +147,21 @@ exports.searchServices = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "ServiceName" : "Id";
+
+    const query = `
       SELECT *
       FROM Services
       WHERE IsActive = 1 AND 
-        (ServiceName LIKE '%' + ${q} + '%'
-         OR Description LIKE '%' + ${q} + '%'
-         OR Charge LIKE '%' + ${q} + '%')
-      ORDER BY id DESC
+        (ServiceName LIKE '%${q}%'
+         OR Description LIKE '%${q}%'
+         OR Charge LIKE '%${q}%')
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

@@ -24,7 +24,20 @@ exports.getAllMeetings = async (req, res) => {
       });
     }
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "m.Id";
+    if (sortBy === "meetingName") sortColumn = "m.MeetingName";
+    else if (sortBy === "meetingType") sortColumn = "ISNULL(mt.Name, m.MeetingTypeId)";
+    else if (sortBy === "startDate") sortColumn = "m.StartDate";
+    else if (sortBy === "endDate") sortColumn = "m.EndDate";
+    else if (sortBy === "department") sortColumn = "ISNULL(d.Department, m.DepartmentId)";
+    else if (sortBy === "location") sortColumn = "ISNULL(l.Name, m.LocationId)";
+    else if (sortBy === "organizedBy") sortColumn = "ISNULL(e1.FirstName, m.OrganizedBy)";
+    else if (sortBy === "reporter") sortColumn = "ISNULL(e2.FirstName, m.ReporterId)";
+
+    const query = `
       SELECT DISTINCT    
         m.Id AS id,
         m.MeetingName AS meetingName,
@@ -42,10 +55,12 @@ exports.getAllMeetings = async (req, res) => {
       LEFT JOIN Employees e1 ON m.OrganizedBy = CAST(e1.Id AS VARCHAR(50))
       LEFT JOIN Employees e2 ON m.ReporterId = CAST(e2.Id AS VARCHAR(50))
       WHERE m.IsActive = 1
-      ORDER BY m.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalRecords,
@@ -296,7 +311,23 @@ exports.searchMeetings = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "m.Id";
+    if (sortBy === "meetingName") sortColumn = "m.MeetingName";
+    else if (sortBy === "meetingType") sortColumn = "ISNULL(mt.Name, m.MeetingTypeId)";
+    else if (sortBy === "startDate") sortColumn = "m.StartDate";
+    else if (sortBy === "endDate") sortColumn = "m.EndDate";
+    else if (sortBy === "department") sortColumn = "ISNULL(d.Department, m.DepartmentId)";
+    else if (sortBy === "location") sortColumn = "ISNULL(l.Name, m.LocationId)";
+    else if (sortBy === "organizedBy") sortColumn = "ISNULL(e1.FirstName, m.OrganizedBy)";
+    else if (sortBy === "reporter") sortColumn = "ISNULL(e2.FirstName, m.ReporterId)";
+
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, q);
+
+    const query = `
       SELECT
         m.Id AS id,
         m.MeetingName AS meetingName,
@@ -314,14 +345,16 @@ exports.searchMeetings = async (req, res) => {
       LEFT JOIN Employees e2 ON m.ReporterId = CAST(e2.Id AS VARCHAR(50))
       WHERE m.IsActive = 1
         AND (
-          m.MeetingName LIKE '%' + ${q} + '%' OR
-          mt.Name LIKE '%' + ${q} + '%' OR
-          d.Department LIKE '%' + ${q} + '%' OR
-          (e1.FirstName + ' ' + ISNULL(e1.LastName, '')) LIKE '%' + ${q} + '%' OR
-          (e2.FirstName + ' ' + ISNULL(e2.LastName, '')) LIKE '%' + ${q} + '%'
+          m.MeetingName LIKE '%' + @q + '%' OR
+          mt.Name LIKE '%' + @q + '%' OR
+          d.Department LIKE '%' + @q + '%' OR
+          (e1.FirstName + ' ' + ISNULL(e1.LastName, '')) LIKE '%' + @q + '%' OR
+          (e2.FirstName + ' ' + ISNULL(e2.LastName, '')) LIKE '%' + @q + '%'
         )
-      ORDER BY m.Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
 

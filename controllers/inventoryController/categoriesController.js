@@ -16,8 +16,17 @@ exports.getAllCategories = async (req, res) => {
       WHERE IsActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    
+    let sortColumn = "c.Id";
+    if (sortBy === "name") sortColumn = "c.Name";
+    else if (sortBy === "description") sortColumn = "c.Description";
+    else if (sortBy === "parentName") sortColumn = "p.Name";
+
     // PAGINATED LIST WITH PARENT NAME + PARENT ID
-    const result = await sql.query`
+    // PAGINATED LIST WITH PARENT NAME + PARENT ID
+    const query = `
       SELECT 
         c.Id AS id,
         c.Name AS name,
@@ -27,10 +36,12 @@ exports.getAllCategories = async (req, res) => {
       FROM Categories c
       LEFT JOIN Categories p ON c.ParentCategoryId = p.Id
       WHERE c.IsActive = 1
-      ORDER BY c.Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,

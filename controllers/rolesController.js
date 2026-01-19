@@ -17,16 +17,24 @@ exports.getAllRoles = async (req, res) => {
     `;
 
     // PAGINATED LIST
-const result = await sql.query`
-  SELECT 
-    RoleId AS id,
-    LOWER(RoleName) AS roleName
-  FROM Roles
-  WHERE isActive = 1
-  ORDER BY RoleId DESC
-  OFFSET ${offset} ROWS
-  FETCH NEXT ${limit} ROWS ONLY
-`;
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "DESC").toUpperCase();
+
+    let sortColumn = "RoleId";
+    if (sortBy === "roleName") sortColumn = "RoleName";
+    if (sortBy === "id") sortColumn = "RoleId";
+
+    // PAGINATED LIST
+    const result = await sql.query(`
+      SELECT 
+        RoleId AS id,
+        LOWER(RoleName) AS roleName
+      FROM Roles
+      WHERE isActive = 1
+      ORDER BY ${sortColumn} ${order}
+      OFFSET ${offset} ROWS
+      FETCH NEXT ${limit} ROWS ONLY
+    `);
 
 
     res.status(200).json({

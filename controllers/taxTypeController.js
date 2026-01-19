@@ -17,7 +17,11 @@ exports.getTaxTypes = async (req, res) => {
     `;
 
     // PAGINATED LIST
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "name" : "id";
+
+    const query = `
       SELECT 
         id AS typeId,
         name AS typeName,
@@ -25,10 +29,12 @@ exports.getTaxTypes = async (req, res) => {
         percentage
       FROM TaxTypes
       WHERE isActive = 1
-      ORDER BY id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -115,12 +121,18 @@ exports.searchTaxTypes = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "name" : "id";
+
+    const query = `
       SELECT id AS typeId, name AS typeName, isInterState, percentage
       FROM TaxTypes
-      WHERE isActive = 1 AND name LIKE '%' + ${q} + '%'
-      ORDER BY id DESC
+      WHERE isActive = 1 AND name LIKE '%${q}%'
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     console.error("SEARCH TAX TYPES ERROR:", error);
