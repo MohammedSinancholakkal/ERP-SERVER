@@ -7,6 +7,9 @@ const PERMISSIONS = require("../constants/permissions");
 // Add
 router.post("/add", checkPermission(PERMISSIONS.SALES.CREATE), salesController.addSale);
 
+// Get Next Number
+router.get("/next-number", checkPermission(PERMISSIONS.SALES.CREATE), salesController.getNextInvoiceNo);
+
 // List (paginated)
 router.get("/", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getAllSales);
 

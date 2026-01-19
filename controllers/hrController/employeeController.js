@@ -61,12 +61,12 @@ exports.createEmployee = async (req, res) => {
       OUTPUT inserted.Id
       VALUES
       (
-        '${firstName}', '${lastName}', ${designationId || 'NULL'}, ${departmentId || 'NULL'}, '${rateType || ''}',
+        '${firstName}', '${lastName}', ${(!isNaN(parseInt(designationId)) ? designationId : null) || 'NULL'}, ${(!isNaN(parseInt(departmentId)) ? departmentId : null) || 'NULL'}, '${rateType || ''}',
         ${hourlyRate || 0}, ${salary || 0}, '${bloodGroup || ""}', '${phone || ''}', '${email || ''}',
         '${pictureUrl || ""}',
-        ${countryId || 'NULL'}, ${stateId || 'NULL'}, ${cityId || 'NULL'}, ${regionId || 'NULL'}, ${territoryId || 'NULL'},
+        ${(!isNaN(parseInt(countryId)) ? countryId : null) || 'NULL'}, ${(!isNaN(parseInt(stateId)) ? stateId : null) || 'NULL'}, ${(!isNaN(parseInt(cityId)) ? cityId : null) || 'NULL'}, ${(!isNaN(parseInt(regionId)) ? regionId : null) || 'NULL'}, ${(!isNaN(parseInt(territoryId)) ? territoryId : null) || 'NULL'},
         '${zipCode || ''}', '${address || ''}',
-        ${payrollBankId || 'NULL'}, '${payrollBankAccount || ''}',
+        ${(!isNaN(parseInt(payrollBankId)) ? payrollBankId : null) || 'NULL'}, '${payrollBankAccount || ''}',
         ${userId || 1}, GETDATE(), ${userId || 1}, 1
       )
     `);
@@ -322,8 +322,8 @@ exports.updateEmployee = async (req, res) => {
       SET
         FirstName = '${firstName}',
         LastName = '${lastName}',
-        DesignationId = ${designationId || 'NULL'},
-        DepartmentId = ${departmentId || 'NULL'},
+        DesignationId = ${(!isNaN(parseInt(designationId)) ? designationId : null) || 'NULL'},
+        DepartmentId = ${(!isNaN(parseInt(departmentId)) ? departmentId : null) || 'NULL'},
         RateType = '${rateType || ''}',
         HoureRateSalary = ${hourlyRate || 0},
         BasicSalary = ${salary || 0},
@@ -331,14 +331,14 @@ exports.updateEmployee = async (req, res) => {
         Phone = '${phone || ''}',
         Email = '${email || ''}',
         ${pictureSet}
-        CountryId = ${countryId || 'NULL'},
-        StateId = ${stateId || 'NULL'},
-        CityId = ${cityId || 'NULL'},
-        RegionId = ${regionId || 'NULL'},
-        TerritoryId = ${territoryId || 'NULL'},
+        CountryId = ${(!isNaN(parseInt(countryId)) ? countryId : null) || 'NULL'},
+        StateId = ${(!isNaN(parseInt(stateId)) ? stateId : null) || 'NULL'},
+        CityId = ${(!isNaN(parseInt(cityId)) ? cityId : null) || 'NULL'},
+        RegionId = ${(!isNaN(parseInt(regionId)) ? regionId : null) || 'NULL'},
+        TerritoryId = ${(!isNaN(parseInt(territoryId)) ? territoryId : null) || 'NULL'},
         ZipCode = '${zipCode || ''}',
         Address = '${address || ''}',
-        PayrollBankId = ${payrollBankId || 'NULL'},
+        PayrollBankId = ${(!isNaN(parseInt(payrollBankId)) ? payrollBankId : null) || 'NULL'},
         BankAccountForPayroll = '${payrollBankAccount || ''}',
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId || 1}

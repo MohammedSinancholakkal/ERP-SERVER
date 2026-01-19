@@ -49,12 +49,26 @@ exports.addDepartment = async (req, res) => {
   const { department, description, parentDepartmentId, userId } = req.body;
 
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT Id AS id, Department AS name FROM Departments WHERE Department = ${department} AND IsActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+            message: "Department already exists", 
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Departments (Department, Description, ParentDepartmentId, InsertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${department}, ${description}, ${parentDepartmentId || null}, ${userId})
     `;
 
-    res.status(200).json({ message: "Department added successfully" });
+    const newId = result.recordset[0].Id;
+    res.status(200).json({ 
+        message: "Department added successfully",
+        record: { id: newId, name: department }
+    });
   } catch (error) {
     console.error("ADD DEPARTMENT ERROR:", error);
     res.status(500).json({ message: "Server error" });

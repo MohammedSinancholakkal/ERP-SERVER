@@ -12,7 +12,7 @@ exports.getAllProducts = async (req, res) => {
     // Total count
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
-      FROM Products
+      FROM Products WITH (NOLOCK)
       WHERE IsActive = 1
     `;
 
@@ -52,12 +52,12 @@ exports.getAllProducts = async (req, res) => {
         p.TaxPercentageId,
         tp.percentage AS taxPercentageValue
 
-      FROM Products p
-      LEFT JOIN Categories c ON p.CategoryId = c.Id
-      LEFT JOIN Units u ON p.UnitId = u.Id
-      LEFT JOIN Brands b ON p.BrandId = b.Id
-      LEFT JOIN Suppliers s ON p.SupplierId = s.Id
-      LEFT JOIN TaxPercentages tp ON p.TaxPercentageId = tp.id
+      FROM Products p WITH (NOLOCK)
+      LEFT JOIN Categories c WITH (NOLOCK) ON p.CategoryId = c.Id
+      LEFT JOIN Units u WITH (NOLOCK) ON p.UnitId = u.Id
+      LEFT JOIN Brands b WITH (NOLOCK) ON p.BrandId = b.Id
+      LEFT JOIN Suppliers s WITH (NOLOCK) ON p.SupplierId = s.Id
+      LEFT JOIN TaxPercentages tp WITH (NOLOCK) ON p.TaxPercentageId = tp.id
       WHERE p.IsActive = 1
       ORDER BY p.Id DESC
       OFFSET ${offset} ROWS
@@ -262,11 +262,11 @@ exports.searchProducts = async (req, res) => {
         p.TaxPercentageId,
         tp.percentage AS taxPercentageValue
 
-      FROM Products p
-      LEFT JOIN Categories c ON p.CategoryId = c.Id
-      LEFT JOIN Units u ON p.UnitId = u.Id
-      LEFT JOIN Brands b ON p.BrandId = b.Id
-      LEFT JOIN TaxPercentages tp ON p.TaxPercentageId = tp.id
+      FROM Products p WITH (NOLOCK)
+      LEFT JOIN Categories c WITH (NOLOCK) ON p.CategoryId = c.Id
+      LEFT JOIN Units u WITH (NOLOCK) ON p.UnitId = u.Id
+      LEFT JOIN Brands b WITH (NOLOCK) ON p.BrandId = b.Id
+      LEFT JOIN TaxPercentages tp WITH (NOLOCK) ON p.TaxPercentageId = tp.id
       WHERE 
         p.IsActive = 1 AND
         (

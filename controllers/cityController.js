@@ -210,8 +210,17 @@ exports.getAllCities = async (req, res) => {
       WHERE isActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "c.id";
+    if (sortBy === "name") sortColumn = "c.name";
+    else if (sortBy === "countryName") sortColumn = "co.name";
+    else if (sortBy === "stateName") sortColumn = "s.name";
+    else if (sortBy === "id") sortColumn = "c.id";
+
     // get paginated records
-    const result = await sql.query`
+    const query = `
       SELECT 
         c.id,
         c.name,
@@ -223,10 +232,11 @@ exports.getAllCities = async (req, res) => {
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
       WHERE c.isActive = 1
-      ORDER BY c.id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    const result = await sql.query(query);
 
     // respond
     res.status(200).json({
@@ -247,13 +257,33 @@ exports.getAllCities = async (req, res) => {
 exports.addCity = async (req, res) => {
   const { name, countryId, stateId, userId } = req.body;
 
+  if (!name || !countryId || !stateId) {
+      return res.status(400).json({ message: "Name, Country, and State are required" });
+  }
+
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT id, name, countryId, stateId FROM Cities WHERE name = ${name} AND stateId = ${stateId} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+            message: "City already exists",
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Cities (name, countryId, stateId, insertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${countryId}, ${stateId}, ${userId})
     `;
-    res.status(200).json({ message: "City added successfully" });
+
+    const newId = result.recordset[0].Id;
+    res.status(200).json({ 
+        message: "City added successfully",
+        record: { id: newId, name, countryId, stateId }
+    });
   } catch (error) {
+    console.error("ADD CITY ERROR:", error);
     res.status(500).json({ message: "Error adding city" });
   }
 };
@@ -266,6 +296,12 @@ exports.updateCity = async (req, res) => {
   const { name, countryId, stateId, userId } = req.body;
 
   try {
+    // Check duplicate
+    const check = await sql.query`SELECT id FROM Cities WHERE name = ${name} AND stateId = ${stateId} AND id != ${id} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(409).json({ message: "City with this name already exists in the selected state" });
+    }
+
     await sql.query`  
       UPDATE Cities
       SET 
@@ -313,7 +349,16 @@ exports.searchCities = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "c.id";
+    if (sortBy === "name") sortColumn = "c.name";
+    else if (sortBy === "countryName") sortColumn = "co.name";
+    else if (sortBy === "stateName") sortColumn = "s.name";
+    else if (sortBy === "id") sortColumn = "c.id";
+
+    const query = `
       SELECT 
         c.id,
         c.name,
@@ -327,12 +372,13 @@ exports.searchCities = async (req, res) => {
       WHERE 
         c.isActive = 1 AND
         (
-          c.name LIKE '%' + ${q} + '%' OR 
-          co.name LIKE '%' + ${q} + '%' OR 
-          s.name LIKE '%' + ${q} + '%'
+          c.name LIKE '%${q}%' OR 
+          co.name LIKE '%${q}%' OR 
+          s.name LIKE '%${q}%'
         )
-      ORDER BY c.id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+    const result = await sql.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Error searching cities" });

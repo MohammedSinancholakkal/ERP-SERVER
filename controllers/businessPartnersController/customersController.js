@@ -5,13 +5,13 @@ const sql = require("../../db/dbConfig");
 // =============================================================
 exports.getAllCustomers = async (req, res) => {
   try {
-    const page = parseInt(req.query.page) || 1;
+    const page = parseInt(req.query.page) || 1;      
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
   
     // TOTAL COUNT
     const totalResult = await sql.query`  
-      SELECT COUNT(*) AS Total
+      SELECT COUNT(*) AS Total        
       FROM Customers
       WHERE IsActive = 1
     `;

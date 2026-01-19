@@ -29,6 +29,7 @@ exports.getAllPurchaseOrders = async (req, res) => {
         p.PaidAmount AS paidAmount,
         p.Due AS due,
         p.VNo AS vno,
+        p.PONumber AS poNumber,
         p.POSequence AS poSequence,
         p.TotalDiscount AS totalDiscount,
         p.ShippingCost AS shippingCost,
@@ -70,6 +71,7 @@ exports.getPurchaseOrderById = async (req, res) => {
     const purchase = await sql.query`
       SELECT 
         p.*, 
+        p.PONumber AS poNumber,
         s.CompanyName AS supplierName,
         s.Address,
         s.GSTIN AS supplierGSTIN,
@@ -137,7 +139,8 @@ exports.addPurchaseOrder = async (req, res) => {
     due,
     change,
     date,
-    vehicleNo
+    vehicleNo,
+    poNumber // NEW
   } = req.body;
 
   // 🔒 FORCE NUMERIC SAFETY
@@ -171,7 +174,7 @@ exports.addPurchaseOrder = async (req, res) => {
         GrandTotal, NetTotal, PaidAmount, Due, [Change],
         Details, EmployeeId, VNo, POSequence,
         TotalTax, NoTax,
-        InsertUserId, TaxTypeId, CGSTRate, SGSTRate, IGSTRate, VehicleNo
+        InsertUserId, TaxTypeId, CGSTRate, SGSTRate, IGSTRate, VehicleNo, PONumber
       )
       OUTPUT INSERTED.Id
       VALUES (
@@ -180,7 +183,7 @@ exports.addPurchaseOrder = async (req, res) => {
         ${safeNumbers.grandTotal}, ${safeNumbers.netTotal}, ${safeNumbers.paidAmount}, ${safeNumbers.due}, ${safeNumbers.change},
         ${details}, ${employeeId}, ${vno}, ${safeNumbers.poSequence},
         ${safeNumbers.totalTax}, ${noTax ? 1 : 0},
-        ${userId}, ${taxTypeId || null}, ${cgstRate || 0}, ${sgstRate || 0}, ${igstRate || 0}, ${vehicleNo || null}
+        ${userId}, ${taxTypeId || null}, ${cgstRate || 0}, ${sgstRate || 0}, ${igstRate || 0}, ${vehicleNo || null}, ${poNumber}
       )
     `;
 
@@ -468,6 +471,7 @@ exports.searchPurchaseOrder = async (req, res) => {
         p.[Change] AS change,
         p.VehicleNo AS vehicleNo,
         p.Details AS details,
+        p.PONumber AS poNumber,
         p.POSequence AS poSequence
       FROM PurchaseOrders p
       LEFT JOIN Suppliers s ON p.SupplierId = s.Id
@@ -489,23 +493,31 @@ exports.searchPurchaseOrder = async (req, res) => {
 // =============================================================
 // GET NEXT PO NUMBER
 // =============================================================
+// =============================================================
+// GET NEXT PO NUMBER
+// =============================================================
 exports.getNextPONumber = async (req, res) => {
   try {
-    // Get the latest inserted PO Sequence
     const result = await sql.query`
-      SELECT MAX(POSequence) AS maxSeq
-      FROM PurchaseOrders 
-      WHERE IsActive = 1
+      SELECT TOP 1 PONumber
+      FROM PurchaseOrders
+      WHERE PONumber LIKE 'PO-%'
+      ORDER BY Id DESC
     `;
 
-    let nextSeq = 1;
-    if (result.recordset.length > 0 && result.recordset[0].maxSeq) {
-        nextSeq = result.recordset[0].maxSeq + 1;
+    let nextNo = "PO-00001";
+    if (result.recordset.length > 0) {
+      const lastNo = result.recordset[0].PONumber;
+      const parts = lastNo.split("-");
+      if (parts.length === 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num)) {
+          const nextNum = num + 1;
+          nextNo = `PO-${String(nextNum).padStart(5, '0')}`;
+        }
+      }
     }
-
-    const nextNo = String(nextSeq).padStart(5, '0');
-
-    res.status(200).json({ nextNo, nextSeq });
+    res.status(200).json({ nextNo });
   } catch (error) {
     console.error("GET NEXT PO NUMBER ERROR:", error);
     res.status(500).json({ message: "Server error" });

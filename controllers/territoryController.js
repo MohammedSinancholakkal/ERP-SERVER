@@ -62,12 +62,26 @@ exports.addTerritory = async (req, res) => {
   }
 
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT id, territoryDescription AS name FROM Territories WHERE territoryDescription = ${territoryDescription} AND regionId = ${regionId} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+            message: "Territory already exists", 
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Territories (territoryDescription, regionId, insertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${territoryDescription}, ${regionId}, ${userId})
     `;
 
-    res.status(201).json({ message: "Territory added successfully" });
+    const newId = result.recordset[0].Id;
+    res.status(201).json({ 
+        message: "Territory added successfully",
+        record: { id: newId, name: territoryDescription, regionId }
+    });
   } catch (error) {
     console.log("ADD TERRITORY ERROR:", error);
     res.status(500).json({ message: "Server Error" });

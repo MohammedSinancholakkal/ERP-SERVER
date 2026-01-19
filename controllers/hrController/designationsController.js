@@ -49,12 +49,26 @@ exports.addDesignation = async (req, res) => {
   const { designation, description, parentDesignationId, userId } = req.body;
 
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT Id AS id, Designation AS name FROM Designations WHERE Designation = ${designation} AND IsActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+            message: "Designation already exists", 
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Designations (Designation, Description, ParentDesignationId, InsertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${designation}, ${description}, ${parentDesignationId || null}, ${userId})
     `;
 
-    res.status(200).json({ message: "Designation added successfully" });
+    const newId = result.recordset[0].Id;
+    res.status(200).json({ 
+        message: "Designation added successfully",
+        record: { id: newId, name: designation }
+    });
   } catch (error) {
     console.error("ADD DESIGNATION ERROR:", error);
     res.status(500).json({ message: "Server error" });

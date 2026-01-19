@@ -2,6 +2,9 @@ const express = require("express");
 const router = express.Router();
 const quotationController = require("../controllers/sales/quotationController");
 
+// NEXT NUMBER
+router.get("/next-number", quotationController.getNextQuotationNo);
+
 // ADD
 router.post("/add", quotationController.addQuotation);
 

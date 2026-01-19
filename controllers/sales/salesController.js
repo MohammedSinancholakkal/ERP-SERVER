@@ -106,6 +106,37 @@ exports.getAllSales = async (req, res) => {
   }
 };
 
+// =============================================================
+// GET NEXT INVOICE NUMBER
+// =============================================================
+exports.getNextInvoiceNo = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT TOP 1 InvoiceNo
+      FROM Sales
+      WHERE InvoiceNo LIKE 'INV-%'
+      ORDER BY Id DESC
+    `;
+
+    let nextNo = "INV-00001";
+    if (result.recordset.length > 0) {
+      const lastNo = result.recordset[0].InvoiceNo;
+      const parts = lastNo.split("-");
+      if (parts.length === 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num)) {
+          const nextNum = num + 1;
+          nextNo = `INV-${String(nextNum).padStart(5, '0')}`;
+        }
+      }
+    }
+    res.status(200).json({ nextNo });
+  } catch (error) {
+    console.error("GET NEXT INVOICE NO ERROR:", error);
+    res.status(500).json({ message: "Error generating invoice number" });
+  }
+};
+
 
 
 // =============================================================
@@ -117,6 +148,7 @@ exports.getSaleById = async (req, res) => {
   try {
     const sale = await sql.query`
       SELECT s.*, 
+             s.InvoiceNo AS invoiceNo,
              c.PAN AS CustomerPAN, 
              c.GSTTIN AS CustomerGSTIN,
              c.Name AS CustomerName,
@@ -187,7 +219,12 @@ exports.addSale = async (req, res) => {
     vno,
     vehicleNo,
     items,   // SaleDetails array
-    userId
+    userId,
+    invoiceNo, // NEW: Invoice No
+    taxTypeId, // Extracted
+    cgstRate,
+    sgstRate,
+    igstRate
   } = req.body;
 
   const transaction = new sql.Transaction();
@@ -218,6 +255,11 @@ exports.addSale = async (req, res) => {
     // ---------- MASTER INSERT
     const masterReq = new sql.Request(transaction);
 
+    const safeTaxTypeId = taxTypeId || null;
+    const safeCgstRate = parseFloat(cgstRate) || 0;
+    const safeSgstRate = parseFloat(sgstRate) || 0;
+    const safeIgstRate = parseFloat(igstRate) || 0;
+
     const saleResult = await masterReq.query`
       INSERT INTO Sales (
         CustomerId, Date,
@@ -226,7 +268,7 @@ exports.addSale = async (req, res) => {
         ShippingCost, GrandTotal, NetTotal,
         PaidAmount, Due, Change, PaymentAccount,
         Details, VNo, VehicleNo, InsertUserId,
-        TaxTypeId, CGSTRate, SGSTRate, IGSTRate
+        TaxTypeId, CGSTRate, SGSTRate, IGSTRate, InvoiceNo
       )
       OUTPUT INSERTED.Id
       VALUES (
@@ -236,7 +278,7 @@ exports.addSale = async (req, res) => {
         ${shippingCost}, ${grandTotal}, ${netTotal},
         ${paidAmount}, ${due}, ${change}, ${paymentAccount},
         ${details}, ${vno}, ${vehicleNo}, ${userId},
-        ${req.body.taxTypeId}, ${req.body.cgstRate}, ${req.body.sgstRate}, ${req.body.igstRate}
+        ${safeTaxTypeId}, ${safeCgstRate}, ${safeSgstRate}, ${safeIgstRate}, ${invoiceNo}
       )
     `;
 
@@ -281,6 +323,9 @@ exports.addSale = async (req, res) => {
   } catch (error) {
     if(transaction._curr) await transaction.rollback();
     console.error("ADD SALE ERROR:", error);
+    if (error.message && (error.message.includes("Insufficient stock") || error.message.includes("not found"))) {
+        return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: error.message || "Server error" });
   }
 };
@@ -451,6 +496,9 @@ exports.updateSale = async (req, res) => {
   } catch (error) {
     if(transaction._curr) await transaction.rollback();
     console.error("UPDATE SALE ERROR:", error);
+    if (error.message && (error.message.includes("Insufficient stock") || error.message.includes("not found"))) {
+        return res.status(400).json({ message: error.message });
+    }
     res.status(500).json({ message: error.message || "Server error" });
   }
 };
@@ -532,7 +580,9 @@ exports.getInactiveSales = async (req, res) => {
         s.Due AS due,
         s.PaymentAccount AS paymentAccount,
         s.PaymentAccount AS paymentAccount,
+        s.PaymentAccount AS paymentAccount,
         s.VNo AS vno,
+        s.InvoiceNo AS invoiceNo,
         s.VehicleNo AS vehicleNo,
         s.Discount AS discount,
         s.TotalDiscount AS totalDiscount,

@@ -52,12 +52,26 @@ exports.addRegion = async (req, res) => {
     return res.status(400).json({ message: "Region name is required" });
 
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT regionId AS id, regionName AS name FROM Regions WHERE regionName = ${regionName} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+            message: "Region already exists", 
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Regions (regionName, insertUserId)
+      OUTPUT INSERTED.regionId AS id
       VALUES (${regionName}, ${userId})
     `;
 
-    res.status(201).json({ message: "Region added successfully" });
+    const newId = result.recordset[0].id;
+    res.status(201).json({ 
+        message: "Region added successfully",
+        record: { id: newId, name: regionName }
+    });
   } catch (error) {
     console.log("ADD REGION ERROR:", error);
     res.status(500).json({ message: "Server Error" });

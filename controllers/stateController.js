@@ -170,8 +170,13 @@ exports.getAllStates = async (req, res) => {
       WHERE isActive = 1
     `;
 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const allowedSort = ["id", "name", "countryName"];
+    const sortColumn = allowedSort.includes(sortBy) ? (sortBy === "countryName" ? "c.name" : `s.${sortBy}`) : "s.id";
+
     // paginated list
-    const result = await sql.query`
+    const query = `
       SELECT 
         s.id,
         s.name,
@@ -180,10 +185,11 @@ exports.getAllStates = async (req, res) => {
       FROM States s
       INNER JOIN Countries c ON s.countryId = c.id
       WHERE s.isActive = 1
-      ORDER BY s.id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalCount.recordset[0].Total,
@@ -221,13 +227,33 @@ exports.getStatesByCountry = async (req, res) => {
 exports.addState = async (req, res) => {
   const { name, countryId, userId } = req.body;
 
+  if (!name || !countryId) {
+     return res.status(400).json({ message: "Name and Country are required" });
+  }
+
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT id, name, countryId FROM States WHERE name = ${name} AND countryId = ${countryId} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(200).json({ 
+          message: "State already exists", 
+          record: check.recordset[0] 
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO States (name, countryId, insertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${countryId}, ${userId})
     `;
-    res.status(200).json({ message: "State added successfully" });
+
+    const newId = result.recordset[0].Id;
+    res.status(200).json({ 
+        message: "State added successfully",
+        record: { id: newId, name, countryId } 
+    });
   } catch (error) {
+    console.error("ADD STATE ERROR:", error);
     res.status(500).json({ message: "Error adding state" });
   }
 };
@@ -240,6 +266,12 @@ exports.updateState = async (req, res) => {
   const { name, countryId, userId } = req.body;
 
   try {
+    // Check duplicate
+    const check = await sql.query`SELECT id FROM States WHERE name = ${name} AND countryId = ${countryId} AND id != ${id} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(409).json({ message: "State with this name already exists in the selected country" });
+    }
+
     await sql.query`
       UPDATE States
       SET 
@@ -284,14 +316,19 @@ exports.searchStates = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "countryName" ? "c.name" : (sortBy === "name" ? "s.name" : "s.id");
+
+    const query = `
       SELECT s.id, s.name, s.countryId, c.name AS countryName
       FROM States s
       INNER JOIN Countries c ON s.countryId = c.id
       WHERE s.isActive = 1
-        AND (s.name LIKE '%' + ${q} + '%' OR c.name LIKE '%' + ${q} + '%')
-      ORDER BY s.id DESC
+        AND (s.name LIKE '%${q}%' OR c.name LIKE '%${q}%')
+      ORDER BY ${sortColumn} ${order}
     `;
+    const result = await sql.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Error searching states" });

@@ -1,6 +1,36 @@
 const sql = require("../../db/dbConfig");
 
 
+// GET NEXT QUOTATION NO
+exports.getNextQuotationNo = async (req, res) => {
+  try {
+    const result = await sql.query`
+      SELECT TOP 1 QuotationNo
+      FROM Quotations
+      WHERE QuotationNo LIKE 'Q-%'
+      ORDER BY Id DESC
+    `;
+
+    let nextNo = "Q-00001";
+    if (result.recordset.length > 0) {
+      const lastNo = result.recordset[0].QuotationNo;
+      const parts = lastNo.split("-");
+      if (parts.length === 2) {
+        const num = parseInt(parts[1], 10);
+        if (!isNaN(num)) {
+          const nextNum = num + 1;
+          nextNo = `Q-${String(nextNum).padStart(5, '0')}`;
+        }
+      }
+    }
+    res.status(200).json({ nextNo });
+  } catch (error) {
+    console.error("GET NEXT QUOTATION NO ERROR:", error);
+    res.status(500).json({ message: "Error generating quotation number" });
+  }
+};
+
+
 // GET ALL QUOTATIONS (Paginated) - fixed
 exports.getAllQuotations = async (req, res) => {
   try {
@@ -22,6 +52,7 @@ exports.getAllQuotations = async (req, res) => {
     const result = await sql.query`
       SELECT
         Id AS id,
+        QuotationNo AS quotationNo,
         CustomerId AS customerId,
         Date AS date,
         ExpiryDate AS expiryDate,
@@ -71,9 +102,14 @@ exports.getQuotationById = async (req, res) => {
 
   try {
     const quotation = await sql.query`
-      SELECT *
-      FROM Quotations
-      WHERE Id = ${id}
+      SELECT q.*, 
+             c.Name as CustomerName, 
+             c.AddressLine1 as CustomerAddress, 
+             c.AddressLine2 as AddressLine2,
+             c.GSTTIN as CustomerGSTIN
+      FROM Quotations q
+      LEFT JOIN Customers c ON q.CustomerId = c.Id
+      WHERE q.Id = ${id}
     `;
 
     const details = await sql.query`
@@ -88,7 +124,8 @@ exports.getQuotationById = async (req, res) => {
         qd.UnitPrice AS unitPrice,
         qd.Discount AS discount,
         qd.Total AS total,
-        p.BrandId AS brandId
+        p.BrandId AS brandId,
+        p.HSNCode AS hsnCode
       FROM QuotationDetails qd
       LEFT JOIN Products p ON qd.ProductId = p.Id
       WHERE qd.QuotationId = ${id} AND qd.IsActive = 1
@@ -111,6 +148,7 @@ exports.getQuotationById = async (req, res) => {
 exports.addQuotation = async (req, res) => {
   const {
     customerId,
+    quotationNo,
     date,
     expiryDate,
     discount,
@@ -123,6 +161,7 @@ exports.addQuotation = async (req, res) => {
     details,
     taxTypeId,
     igstRate,
+    cgstRate,
     sgstRate,
     vehicleNo,
     items, // QuotationDetails array
@@ -139,7 +178,7 @@ exports.addQuotation = async (req, res) => {
 
     const quotationResult = await masterReq.query`
       INSERT INTO Quotations (
-        CustomerId, Date, ExpiryDate,
+        CustomerId, QuotationNo, Date, ExpiryDate,
         Discount, TotalDiscount,
         TotalTax, NoTax,
         ShippingCost, GrandTotal, NetTotal,
@@ -147,7 +186,7 @@ exports.addQuotation = async (req, res) => {
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${customerId}, ${date}, ${expiryDate},
+        ${customerId}, ${quotationNo}, ${date}, ${expiryDate},
         ${discount}, ${totalDiscount},
         ${totalTax}, ${noTax || 0},
         ${shippingCost}, ${grandTotal}, ${netTotal},
@@ -402,11 +441,11 @@ exports.searchQuotation = async (req, res) => {
     const result = await sql.query`
       SELECT
         Id              AS id,
+        QuotationNo     AS quotationNo,
         CustomerId      AS customerId,
         Date            AS date,
         ExpiryDate      AS expiryDate,
         Discount        AS discount,
-        TotalDiscount   AS totalDiscount,
         TotalDiscount   AS totalDiscount,
         TotalTax        AS totalTax,
         ShippingCost    AS shippingCost,

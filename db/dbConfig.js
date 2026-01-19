@@ -8,8 +8,8 @@ const config = {
   database: process.env.DB_NAME,
   port: 1433,
   
-  connectionTimeout: 60000, 
-  requestTimeout: 60000,
+  connectionTimeout: 300000, 
+  requestTimeout: 300000,
 
   pool: {
     max: 10,    
@@ -21,8 +21,8 @@ const config = {
     encrypt: false,               
     trustServerCertificate: true, 
     enableArithAbort: true,
-    connectTimeout: 60000,        
-    cancelTimeout: 60000
+    connectTimeout: 300000,        
+    cancelTimeout: 300000
   },
 };
 

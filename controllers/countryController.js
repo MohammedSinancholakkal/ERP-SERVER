@@ -153,16 +153,22 @@ exports.getAllCountries = async (req, res) => {
     `;
 
     // PAGINATED LIST
-    const result = await sql.query`
-      SELECT 
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+
+    const query = `
+      SELECT
         id,
         name
       FROM Countries
       WHERE isActive = 1
-      ORDER BY id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -183,12 +189,29 @@ exports.addCountry = async (req, res) => {
   const { name, userId } = req.body;
 
   try {
-    await sql.query`
+    // Check duplicate
+    const check = await sql.query`SELECT id, name FROM Countries WHERE name = ${name} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        // Return existing record instead of 409 to allow frontend to proceed
+        return res.status(200).json({ 
+            message: "Country already exists", 
+            record: check.recordset[0]
+        });
+    }
+
+    const result = await sql.query`
       INSERT INTO Countries (name, insertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${userId})
     `;
-    res.status(200).json({ message: "Country added successfully" });
+    
+    const newId = result.recordset[0].Id;
+    res.status(200).json({ 
+        message: "Country added successfully",
+        record: { id: newId, name }
+    });
   } catch (error) {
+    console.error("ADD COUNTRY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
@@ -201,6 +224,12 @@ exports.updateCountry = async (req, res) => {
   const { name, userId } = req.body;
 
   try {
+    // Check duplicate
+    const check = await sql.query`SELECT id FROM Countries WHERE name = ${name} AND id != ${id} AND isActive = 1`;
+    if (check.recordset.length > 0) {
+        return res.status(409).json({ message: "Country with this name already exists" });
+    }
+
     await sql.query`
       UPDATE Countries 
       SET 
@@ -244,12 +273,18 @@ exports.searchCountries = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "ASC").toUpperCase();
+    const sortColumn = sortBy === "name" ? "Name" : "Id";
+
+    const query = `
       SELECT id, name
       FROM Countries
-      WHERE isActive = 1 AND name LIKE '%' + ${q} + '%'
-      ORDER BY id DESC
+      WHERE isActive = 1 AND name LIKE '%${q}%'
+      ORDER BY ${sortColumn} ${order}
     `;
+
+    const result = await sql.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Server Error" });

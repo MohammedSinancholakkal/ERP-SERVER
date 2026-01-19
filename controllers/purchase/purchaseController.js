@@ -106,7 +106,9 @@ exports.getPurchaseById = async (req, res) => {
         pd.UnitPrice,
         pd.Discount,
         pd.Total,
-        p.BrandId AS brandId
+        p.BrandId AS brandId,
+        p.HSNCode AS hsnCode,
+        p.Barcode AS barcode
       FROM PurchaseDetails pd
       LEFT JOIN Products p ON pd.ProductId = p.Id
       WHERE pd.PurchaseId = ${id} AND pd.IsActive = 1
@@ -128,6 +130,7 @@ exports.addPurchase = async (req, res) => {
   const {
     supplierId,
     invoiceNo,
+    purchaseOrderNo,
     date,
     discount,
     totalDiscount,
@@ -177,7 +180,7 @@ exports.addPurchase = async (req, res) => {
 
     const purchaseResult = await purchaseReq.query`
       INSERT INTO Purchases (
-        SupplierId, InvoiceNo, Date,
+        SupplierId, InvoiceNo, PurchaseOrderNo, Date,
         Discount, TotalDiscount, ShippingCost,
         GrandTotal, NetTotal, PaidAmount, Due, [Change],
         Details, PaymentAccount, EmployeeId, VNo,
@@ -186,7 +189,7 @@ exports.addPurchase = async (req, res) => {
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${supplierId}, ${invoiceNo}, ${date},
+        ${supplierId}, ${invoiceNo}, ${purchaseOrderNo || null}, ${date},
         ${safeNumbers.discount}, ${safeNumbers.totalDiscount}, ${safeNumbers.shippingCost},
         ${safeNumbers.grandTotal}, ${safeNumbers.netTotal}, ${safeNumbers.paidAmount}, ${safeNumbers.due}, ${safeNumbers.change},
         ${details}, ${paymentAccount}, ${employeeId}, ${vno},
@@ -246,6 +249,7 @@ exports.updatePurchase = async (req, res) => {
   const {
     supplierId,
     invoiceNo,
+    purchaseOrderNo,
     date,
     discount,
     totalDiscount,
@@ -294,6 +298,7 @@ exports.updatePurchase = async (req, res) => {
       SET
         SupplierId = ${supplierId},
         InvoiceNo = ${invoiceNo},
+        PurchaseOrderNo = ${purchaseOrderNo || null},
         Date = ${date},
         Discount = ${safeNumbers.discount},
         TotalDiscount = ${safeNumbers.totalDiscount},
@@ -571,6 +576,7 @@ exports.searchPurchase = async (req, res) => {
       WHERE p.IsActive = 1
       AND (
         p.InvoiceNo LIKE '%' + ${q} + '%'
+        OR p.PurchaseOrderNo LIKE '%' + ${q} + '%'
         OR s.CompanyName LIKE '%' + ${q} + '%'
       )
       ORDER BY p.InsertDate DESC

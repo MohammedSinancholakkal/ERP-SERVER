@@ -27,12 +27,25 @@ exports.getAllBanks = async (req, res) => {
       SELECT COUNT(*) AS Total FROM Banks WHERE IsActive = 1
     `;
 
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "BankName"; 
+    const order = (req.query.order || "ASC").toUpperCase();
+
+    let sortColumn = "Id";
+    if (sortBy === "BankName") sortColumn = "BankName";
+    else if (sortBy === "ACName") sortColumn = "ACName";
+    else if (sortBy === "ACNumber") sortColumn = "ACNumber";
+    else if (sortBy === "Branch") sortColumn = "Branch";
+    else if (sortBy === "isCompanyBank") sortColumn = "IsCompanyBank";
+    else if (sortBy === "id") sortColumn = "Id";
+
+    const query = `
       SELECT * FROM Banks
       WHERE IsActive = 1
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
     `;
+
+    const result = await sql.query(query);
 
     res.status(200).json({
       total: total.recordset[0].Total,
@@ -170,16 +183,26 @@ exports.searchBanks = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const sortBy = req.query.sortBy || "id";
+    const order = (req.query.order || "DESC").toUpperCase();
+    let sortColumn = "Id";
+    if (sortBy === "BankName") sortColumn = "BankName";
+    else if (sortBy === "ACName") sortColumn = "ACName";
+    else if (sortBy === "ACNumber") sortColumn = "ACNumber";
+    else if (sortBy === "Branch") sortColumn = "Branch";
+    else if (sortBy === "id") sortColumn = "Id";
+
+    const query = `
       SELECT *
       FROM Banks
       WHERE IsActive = 1 AND (
-        BankName LIKE '%' + ${q} + '%' OR
-        ACName LIKE '%' + ${q} + '%' OR
-        ACNumber LIKE '%' + ${q} + '%'
+        BankName LIKE '%${q}%' OR
+        ACName LIKE '%${q}%' OR
+        ACNumber LIKE '%${q}%'
       )
-      ORDER BY Id DESC
+      ORDER BY ${sortColumn} ${order}
     `;
+    const result = await sql.query(query);
     res.status(200).json(result.recordset);
   } catch {
     res.status(500).json({ message: "Search failed" });
@@ -236,7 +259,7 @@ exports.restoreBank = async (req, res) => {
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
-    `;
+    `;  
 
     res.status(200).json({ message: "Bank restored successfully" });
   } catch {
