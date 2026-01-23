@@ -63,6 +63,16 @@ exports.addCustomerGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
+    // Check for duplicate
+    const checkDuplicate = await sql.query`
+      SELECT Id FROM CustomerGroups 
+      WHERE LOWER(GroupName) = LOWER(${groupName.trim()}) AND IsActive = 1
+    `;
+
+    if (checkDuplicate.recordset.length > 0) {
+      return res.status(409).json({ message: "Customer group with this name already exists" });
+    }
+
     await sql.query`
       INSERT INTO CustomerGroups (GroupName, Description, InsertUserId)
       VALUES (${groupName.trim()}, ${description}, ${userId})
@@ -86,6 +96,16 @@ exports.updateCustomerGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
+    // Check for duplicate (excluding current record)
+    const checkDuplicate = await sql.query`
+      SELECT Id FROM CustomerGroups 
+      WHERE LOWER(GroupName) = LOWER(${groupName.trim()}) AND Id != ${id} AND IsActive = 1
+    `;
+
+    if (checkDuplicate.recordset.length > 0) {
+      return res.status(409).json({ message: "Customer group with this name already exists" });
+    }
+
     await sql.query`
       UPDATE CustomerGroups
       SET 
@@ -134,11 +154,7 @@ exports.searchCustomerGroups = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
-    const sortColumn = sortBy === "name" ? "GroupName" : "Id";
-
-    const query = `
+    const result = await sql.query`
       SELECT 
         Id,
         GroupName,
@@ -147,13 +163,11 @@ exports.searchCustomerGroups = async (req, res) => {
       WHERE 
         IsActive = 1 AND
         (
-          GroupName LIKE '%${q}%' OR
-          Description LIKE '%${q}%'
+          GroupName LIKE ${'%' + q + '%'} OR
+          Description LIKE ${'%' + q + '%'}
         )
-      ORDER BY ${sortColumn} ${order}
+      ORDER BY GroupName ASC
     `;
-
-    const result = await sql.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

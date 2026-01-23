@@ -150,6 +150,20 @@ module.exports = {
       EDIT: "language_edit",
       DELETE: "language_delete",
   },
+
+  TAX_TYPES: {
+      CREATE: "tax_type_create",
+      VIEW: "tax_type_view",
+      EDIT: "tax_type_edit",
+      DELETE: "tax_type_delete",
+  },
+
+  TAX_PERCENTAGES: {
+      CREATE: "tax_percentage_create",
+      VIEW: "tax_percentage_view",
+      EDIT: "tax_percentage_edit",
+      DELETE: "tax_percentage_delete",
+  },
   
   // MODULES (Using the keys we seeded)
   // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

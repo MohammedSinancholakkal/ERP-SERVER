@@ -1,13 +1,24 @@
 const express = require("express");
 const router = express.Router();
 const taxPercentageController = require("../controllers/taxPercentageController");
+const checkPermission = require("../middleware/checkPermission");
+const PERMISSIONS = require("../constants/permissions");
 
-router.get("/get-all", taxPercentageController.getTaxPercentages);
-router.post("/add", taxPercentageController.addTaxPercentage);
-router.put("/update/:id", taxPercentageController.updateTaxPercentage);
-router.post("/delete/:id", taxPercentageController.deleteTaxPercentage); // Using POST for soft delete with body
-router.get("/search", taxPercentageController.searchTaxPercentages);
-router.get("/get-inactive", taxPercentageController.getInactiveTaxPercentages);
-router.post("/restore/:id", taxPercentageController.restoreTaxPercentage);
+// POST operations (add)
+router.post("/add", checkPermission(PERMISSIONS.TAX_PERCENTAGES.CREATE), taxPercentageController.addTaxPercentage);
+
+// 🔥 SEARCH (MUST COME BEFORE :id)
+router.get("/search", checkPermission(PERMISSIONS.TAX_PERCENTAGES.VIEW), taxPercentageController.searchTaxPercentages);
+
+// Inactive operations
+router.get("/get-inactive", checkPermission(PERMISSIONS.TAX_PERCENTAGES.VIEW), taxPercentageController.getInactiveTaxPercentages);
+
+// GET all - MUST COME AFTER /search AND /get-inactive
+router.get("/get-all", checkPermission(PERMISSIONS.TAX_PERCENTAGES.VIEW), taxPercentageController.getTaxPercentages);
+
+// PUT/DELETE by ID - MUST COME AFTER previous routes
+router.put("/update/:id", checkPermission(PERMISSIONS.TAX_PERCENTAGES.EDIT), taxPercentageController.updateTaxPercentage);
+router.post("/delete/:id", checkPermission(PERMISSIONS.TAX_PERCENTAGES.DELETE), taxPercentageController.deleteTaxPercentage);
+router.post("/restore/:id", checkPermission(PERMISSIONS.TAX_PERCENTAGES.DELETE), taxPercentageController.restoreTaxPercentage);
 
 module.exports = router;

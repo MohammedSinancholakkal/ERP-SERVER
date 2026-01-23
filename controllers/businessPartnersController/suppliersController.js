@@ -153,7 +153,7 @@ exports.addSupplier = async (req, res) => {
   } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Suppliers (
         CompanyName, CountryId, StateId, CityId,
         ContactName, ContactTitle, AddressLine1, AddressLine2, RegionId,
@@ -162,6 +162,7 @@ exports.addSupplier = async (req, res) => {
         SupplierGroupId,
         OrderBooker, PAN, GSTIN, InsertUserId
       )
+      OUTPUT INSERTED.Id
       VALUES (
         ${companyName}, ${countryId}, ${stateId}, ${cityId},
         ${contactName}, ${contactTitle}, ${addressLine1}, ${addressLine2}, ${regionId},
@@ -172,7 +173,12 @@ exports.addSupplier = async (req, res) => {
       )
     `;
 
-    res.status(200).json({ message: "Supplier added successfully" });
+    const newId = result.recordset[0].Id;
+
+    res.status(200).json({ 
+        message: "Supplier added successfully",
+        record: { id: newId, companyName, email, phone }
+    });
   } catch (error) {
     console.error("ADD SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Server error" });

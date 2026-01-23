@@ -1,56 +1,5 @@
 const sql = require("../../db/dbConfig");
 
-// =============================================================
-// GET ALL SALES (Paginated)
-// =============================================================
-// exports.getAllSales = async (req, res) => {
-//   try {
-//     const page = parseInt(req.query.page) || 1;
-//     const limit = parseInt(req.query.limit) || 25;
-//     const offset = (page - 1) * limit;
-
-//     const totalResult = await sql.query`
-//       SELECT COUNT(*) AS Total
-//       FROM Sales
-//       WHERE IsActive = 1
-//     `;
-
-//     const result = await sql.query`
-//       SELECT
-//         Id AS id,
-//         CustomerId AS customerId,
-//         EmployeeId AS employeeId,
-//         Date AS date,
-//         GrandTotal AS grandTotal,
-//         NetTotal AS netTotal,
-//         PaidAmount AS paidAmount,
-//         Due AS due,
-//         PaymentAccount AS paymentAccount,
-//         VNo AS vno,
-//         Discount AS discount,
-//         TotalDiscount AS totalDiscount,
-//         Vat AS vat,
-//         TotalTax AS totalTax,
-//         ShippingCost AS shippingCost,
-//         Change AS change,
-//         Details AS details
-//       FROM Sales
-//       WHERE IsActive = 1
-//       ORDER BY InsertDate DESC
-//       OFFSET ${offset} ROWS
-//       FETCH NEXT ${limit} ROWS ONLY
-//     `;
-
-//     res.status(200).json({
-//       total: totalResult.recordset[0].Total,
-//       records: result.recordset
-//     });
-
-//   } catch (error) {
-//     console.error("SALES ERROR:", error);
-//     res.status(500).json({ message: "Error loading sales" });
-//   }
-// };
 
 
 exports.getAllSales = async (req, res) => {
@@ -65,24 +14,7 @@ exports.getAllSales = async (req, res) => {
     // Map frontend keys to backend columns
     let sortColumn = "InsertDate"; // Default sort
     if (sortBy === "id") sortColumn = "Id";
-    else if (sortBy === "customerName") sortColumn = "customerName"; // Alias from join/subquery ?? No, we are selecting fields.
-    // Wait, the original query doesn't join Customer for name in the list? 
-    // Let's check the SELECT list again.
-    // The original query SELECTs: CustomerId, Date, GrandTotal, etc.
-    // It does NOT join Customers table in the main result set fetch? 
-    // Ah, line 597 (getInactive) joins Customers. But getAllSales (line 69) DOES NOT join Customers!
-    // The main query (lines 69-96) selects columns from Sales table ONLY. 
-    // But normalized normalizedSale in frontend (line 147) fetches Customers separately and maps names!
-    // So for sorting by Customer Name, we can't do it server side easily unless we JOIN here.
-    
-    // DECISION: To support sorting by Customer Name, I SHOULD add the JOIN to the query now.
-    // Or I can stick to sorting by fields present in Sales table.
-    // The User wants "server side sorting". If the main table doesn't have names, sorting by name won't work server side without a join.
-    // I will add the JOIN to Customers c ON s.CustomerId = c.Id to allow sorting by CustomerName.
-
-    // Let's refine the query to include the Join like getInactiveSales does or getSaleById.
-    
-    // Mapping:
+    else if (sortBy === "customerName") sortColumn = "customerName"; 
     switch (sortBy) {
         case "id": sortColumn = "S.Id"; break;
         case "customerName": sortColumn = "C.Name"; break;
@@ -97,13 +29,6 @@ exports.getAllSales = async (req, res) => {
         default: sortColumn = "S.InsertDate"; // Default
     }
 
-    // Adjust order default
-    // If no specific sort requested, default to InsertDate DESC (Recent first) ?? 
-    // User asked "make default as ASC". 
-    // If user provides no params, I should default to something sensible. 
-    // Usually ID ASC or Date DESC. User said "yes make the defualt as asc".
-    // I will default to ID ASC if nothing provided.
-    
     if (!req.query.sortBy) {
         sortColumn = "S.Id";
         // order is already defaulted to ASC above if missing
@@ -633,8 +558,6 @@ exports.getInactiveSales = async (req, res) => {
         s.PaidAmount AS paidAmount,
         s.Due AS due,
         s.PaymentAccount AS paymentAccount,
-        s.PaymentAccount AS paymentAccount,
-        s.PaymentAccount AS paymentAccount,
         s.VNo AS vno,
         s.InvoiceNo AS invoiceNo,
         s.VehicleNo AS vehicleNo,
@@ -672,9 +595,6 @@ exports.restoreSale = async (req, res) => {
 
   try {
     await transaction.begin();
-
-    // CHECK STOCK AVAILABILITY (Optional but safer)
-    // To be strict, we really should check if we can restore this sale (i.e., do we have stock to "sell" again?)
     const itemsReq = new sql.Request(transaction);
     const itemsRes = await itemsReq.query`
         SELECT ProductId, Quantity FROM SaleDetails WHERE SaleId = ${id}
@@ -716,5 +636,61 @@ exports.restoreSale = async (req, res) => {
     if(transaction._curr) await transaction.rollback();
     console.error("RESTORE SALE ERROR:", error);
     res.status(500).json({ message: error.message || "Server error" });
+  }
+};
+
+// =============================================================
+// SEARCH SALES
+// =============================================================
+exports.searchSale = async (req, res) => {
+  const q = req.query.q;
+
+  if (!q || !q.trim()) {
+    return res.status(400).json({ message: "Search query is required" });
+  }
+
+  try {
+    const result = await sql.query`
+      SELECT
+        S.Id              AS id,
+        S.CustomerId      AS customerId,
+        C.Name            AS customerName,
+        S.Date            AS date,
+        S.GrandTotal      AS grandTotal,
+        S.NetTotal        AS netTotal,
+        S.PaidAmount      AS paidAmount,
+        S.Due             AS due,
+        S.PaymentAccount  AS paymentAccount,
+        S.VNo             AS vno,
+        S.InvoiceNo       AS invoiceNo,
+        S.VehicleNo       AS vehicleNo,
+        S.Discount        AS discount,
+        S.TotalDiscount   AS totalDiscount,
+        S.TotalTax        AS totalTax,
+        S.IGSTRate        AS igstRate,
+        S.CGSTRate        AS cgstRate,
+        S.SGSTRate        AS sgstRate,
+        S.ShippingCost    AS shippingCost,
+        S.Change          AS change,
+        S.Details         AS details
+      FROM Sales S
+      LEFT JOIN Customers C ON S.CustomerId = C.Id
+      WHERE S.IsActive = 1
+        AND (
+          CAST(S.Id AS NVARCHAR) LIKE ${'%' + q + '%'}
+          OR S.VNo LIKE ${'%' + q + '%'}
+          OR S.InvoiceNo LIKE ${'%' + q + '%'}
+          OR S.VehicleNo LIKE ${'%' + q + '%'}
+          OR C.Name LIKE ${'%' + q + '%'}
+        )
+      ORDER BY S.InsertDate DESC
+    `;
+
+    res.status(200).json({
+      records: result.recordset
+    });
+  } catch (error) {
+    console.error("SEARCH SALE ERROR:", error);
+    res.status(500).json({ message: "Search failed" });
   }
 };

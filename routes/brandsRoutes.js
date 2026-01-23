@@ -7,7 +7,13 @@ const PERMISSIONS = require("../constants/permissions");
 // ADD
 router.post("/add", checkPermission(PERMISSIONS.INVENTORY.BRANDS.CREATE), brandsController.addBrand);
 
-// GET (Paginated)
+// 🔥 SEARCH (MUST COME BEFORE :id)
+router.get("/search", checkPermission(PERMISSIONS.INVENTORY.BRANDS.VIEW), brandsController.searchBrands);
+
+// INACTIVE
+router.get("/inactive", checkPermission(PERMISSIONS.INVENTORY.BRANDS.VIEW), brandsController.getInactiveBrands);
+
+// GET (Paginated) - MUST COME AFTER /search AND /inactive
 router.get("/", checkPermission(PERMISSIONS.INVENTORY.BRANDS.VIEW), brandsController.getAllBrands);
 
 // UPDATE
@@ -15,12 +21,6 @@ router.put("/update/:id", checkPermission(PERMISSIONS.INVENTORY.BRANDS.EDIT), br
 
 // DELETE (soft)
 router.delete("/delete/:id", checkPermission(PERMISSIONS.INVENTORY.BRANDS.DELETE), brandsController.deleteBrand);
-
-// SEARCH
-router.get("/search", checkPermission(PERMISSIONS.INVENTORY.BRANDS.VIEW), brandsController.searchBrands);
-
-// INACTIVE
-router.get("/inactive", checkPermission(PERMISSIONS.INVENTORY.BRANDS.VIEW), brandsController.getInactiveBrands);
 
 // RESTORE
 router.put("/restore/:id", checkPermission(PERMISSIONS.INVENTORY.BRANDS.DELETE), brandsController.restoreBrand);

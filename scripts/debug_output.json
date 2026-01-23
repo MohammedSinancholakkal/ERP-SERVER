@@ -1,0 +1,43 @@
+{
+  "meetings": [
+    {
+      "Id": 14,
+      "MeetingName": "test",
+      "StartDate": "2026-01-23T16:40:00.000Z",
+      "Recipients": "sinansibu@gmail.com",
+      "InsertDate": "2026-01-23T08:21:06.913Z"
+    },
+    {
+      "Id": 13,
+      "MeetingName": "test meeting new one",
+      "StartDate": "2026-01-21T20:10:00.000Z",
+      "Recipients": "sinansibu@gmail.com",
+      "InsertDate": "2026-01-22T00:51:53.690Z"
+    },
+    {
+      "Id": 12,
+      "MeetingName": "salary discussion meeting",
+      "StartDate": "2026-01-21T14:30:00.000Z",
+      "Recipients": "sinansibu@gmail.com",
+      "InsertDate": "2026-01-21T23:43:02.553Z"
+    },
+    {
+      "Id": 11,
+      "MeetingName": "new meeting test",
+      "StartDate": "2026-01-22T07:25:00.000Z",
+      "Recipients": "sinansibu@gmail.com",
+      "InsertDate": "2026-01-21T04:30:20.450Z"
+    },
+    {
+      "Id": 10,
+      "MeetingName": "Sales Strategy meeting",
+      "StartDate": "2026-01-21T17:45:00.000Z",
+      "Recipients": "sinansibu@gmail.com,mommedsinann@gmail.com",
+      "InsertDate": "2026-01-21T03:25:28.917Z"
+    }
+  ],
+  "dbTime": {
+    "DB_Local": "2026-01-23T03:29:45.833Z",
+    "DB_UTC": "2026-01-23T11:29:45.833Z"
+  }
+}

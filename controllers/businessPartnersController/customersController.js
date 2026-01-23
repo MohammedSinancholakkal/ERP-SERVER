@@ -153,7 +153,7 @@ exports.addCustomer = async (req, res) => {
   } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Customers (
         Name, ContactName, ContactTitle,
         CountryId, StateId, CityId,
@@ -167,6 +167,7 @@ exports.addCustomer = async (req, res) => {
         InsertUserId,
         IsActive
       )
+      OUTPUT INSERTED.Id
       VALUES (
         ${name}, ${contactName}, ${contactTitle},
         ${countryId}, ${stateId}, ${cityId},
@@ -182,7 +183,12 @@ exports.addCustomer = async (req, res) => {
       )
     `;
 
-    res.status(200).json({ message: "Customer added successfully" });
+    const newId = result.recordset[0].Id;
+
+    res.status(200).json({ 
+        message: "Customer added successfully",
+        record: { id: newId, name, email, phone }
+    });
 
   } catch (error) {
     console.error("ADD CUSTOMER ERROR:", error);

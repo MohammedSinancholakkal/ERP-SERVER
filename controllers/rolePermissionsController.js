@@ -37,13 +37,33 @@ exports.setRolePermissions = async (req, res) => {
   }
 
   try {
+    // Get the role name to check if it's superadmin
+    const roleResult = await sql.query`
+      SELECT RoleName FROM Roles WHERE RoleId = ${id}
+    `;
+
+    const isSuperAdmin = roleResult.recordset.length > 0 && 
+                         roleResult.recordset[0].RoleName?.toLowerCase() === 'superadmin';
+
+    // Tax-related permissions (only for superadmin)
+    const TAX_PERMISSIONS = [
+      'tax_type_create', 'tax_type_view', 'tax_type_edit', 'tax_type_delete',
+      'tax_percentage_create', 'tax_percentage_view', 'tax_percentage_edit', 'tax_percentage_delete'
+    ];
+
+    // Filter out tax permissions for non-superadmin roles
+    let filteredPermissions = permissionKeys;
+    if (!isSuperAdmin) {
+      filteredPermissions = permissionKeys.filter(key => !TAX_PERMISSIONS.includes(key));
+    }
+
     // 1️⃣ Delete old permissions (clean slate)
     await sql.query`
       DELETE FROM RolePermissions WHERE RoleId = ${id}
     `;
 
-    // 2️⃣ Insert new permissions
-    for (const key of permissionKeys) {
+    // 2️⃣ Insert new permissions (filtered)
+    for (const key of filteredPermissions) {
       await sql.query`
         INSERT INTO RolePermissions
           (RoleId, PermissionKey, IsActive)

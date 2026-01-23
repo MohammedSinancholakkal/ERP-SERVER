@@ -43,6 +43,7 @@ const settingsRoutes = require("./routes/settingsRoutes");
 const suppliersRoutes = require("./routes/suppliersRoutes");
 const customersRoutes = require("./routes/customersRoutes");
 const meetingsRoutes = require("./routes/meetingsRoutes");
+const meetingRemindersRoutes = require("./routes/meetingRemindersRoutes");
 const attendanceRoutes = require("./routes/attendanceRoutes");
 const purchaseRoutes = require("./routes/purchaseRoutes");
 const goodsReceiptRoutes = require("./routes/goodsReceiptRoutes");
@@ -214,6 +215,7 @@ ERP_SERVER.use("/api/settings", settingsRoutes);
 ERP_SERVER.use("/api/suppliers", suppliersRoutes);
 ERP_SERVER.use("/api/customers", customersRoutes);
 ERP_SERVER.use("/api/meetings", meetingsRoutes);
+ERP_SERVER.use("/api/meeting-reminders", meetingRemindersRoutes);
 ERP_SERVER.use("/api/attendance", attendanceRoutes);
 ERP_SERVER.use("/api/purchases", purchaseRoutes);
 ERP_SERVER.use("/api/goods-receipts", goodsReceiptRoutes);
@@ -299,5 +301,17 @@ const PORT = process.env.PORT || 5000;
 ERP_SERVER.listen(PORT, () => {
   console.log(`ERP_SERVER running on port ${PORT} (Process: ${process.pid})`);
   console.log(`Environment: PORT=${process.env.PORT}`);
+
+  // 🔔 Initialize Production Meeting Reminder Scheduler
+  (async () => {
+    try {
+      const { initializeReminderScheduler } = require("./services/productionMeetingReminderScheduler");
+      await initializeReminderScheduler();
+      console.log("✅ Production meeting reminder scheduler initialized successfully");
+    } catch (error) {
+      console.error("❌ Failed to initialize meeting reminder scheduler:", error.message);
+      // Don't exit - server can still run without scheduler
+    }
+  })();
 });
 

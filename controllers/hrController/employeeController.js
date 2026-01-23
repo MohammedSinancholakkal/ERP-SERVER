@@ -107,7 +107,12 @@ exports.createEmployee = async (req, res) => {
 
     res.status(201).json({
       message: "Employee created successfully",
-      employeeId: employeeId
+      record: {
+          id: employeeId,
+          firstName,
+          lastName,
+          name: `${firstName} ${lastName}`.trim()
+      }
     });
 
   } catch (error) {

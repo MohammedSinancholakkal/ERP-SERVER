@@ -64,12 +64,18 @@ exports.addBrand = async (req, res) => {
       return res.status(409).json({ message: "Brand name already exists" });
     }
 
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Brands (Name, Description, InsertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${description}, ${userId})
     `;
 
-    res.status(200).json({ message: "Brand added successfully" });
+    const newId = result.recordset[0].Id;
+
+    res.status(200).json({ 
+        message: "Brand added successfully",
+        record: { id: newId, name, description }
+    });
 
   } catch (error) {
     console.error("ADD BRAND ERROR:", error);

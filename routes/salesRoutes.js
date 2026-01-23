@@ -10,13 +10,16 @@ router.post("/add", checkPermission(PERMISSIONS.SALES.CREATE), salesController.a
 // Get Next Number
 router.get("/next-number", checkPermission(PERMISSIONS.SALES.CREATE), salesController.getNextInvoiceNo);
 
+// 🔥 SEARCH (MUST COME BEFORE :id)
+router.get("/search", checkPermission(PERMISSIONS.SALES.VIEW), salesController.searchSale);
+
 // List (paginated)
 router.get("/", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getAllSales);
 
 // Inactive
 router.get("/inactive", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getInactiveSales);
 
-// Get by id (with details)
+// Get by id (with details) - MUST COME AFTER /search AND /inactive
 router.get("/:id", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getSaleById);
 
 // Update

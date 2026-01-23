@@ -1,8 +1,50 @@
 const sql = require("../../db/dbConfig");
+const { formatISTTime } = require("../../utils/dateTime.js");
+
+const istToUTC = (istDateString) => {
+  if (!istDateString) return null;
+
+  // 1. Create a Date object from the string (parses in server local time)
+  const d = new Date(istDateString);
+  
+  // 2. Extract "Face Value" components (e.g. 12:50) regardless of timezone
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  const day = d.getDate();
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+  const seconds = d.getSeconds();
+
+  // 3. Create a UTC timestamp from these components (Treating 12:50 as 12:50 UTC initially)
+  // We return this DIRECTLY to store "Face Value" in the DB (e.g. 12:50 stays 12:50)
+  // This is required because the Status/Frontend expects local time without conversion
+  const asUTC = Date.UTC(year, month, day, hours, minutes, seconds);
+
+  return new Date(asUTC);
+};
+  
 
 // =============================================================
 // GET ALL MEETINGS (Paginated)
 // =============================================================
+// Helper to shift UTC to IST for display
+const toIST = (dateObj) => {
+  if (!dateObj) return null;
+  const d = new Date(dateObj);
+  
+  // Since we are storing "Face Value" UTC in the DB (Input 2:00 PM -> Saved as 14:00 UTC),
+  // We do NOT need to add 5.5h here. We just format the UTC components directly.
+  
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  const seconds = String(d.getUTCSeconds()).padStart(2, '0');
+  
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+};
+
 exports.getAllMeetings = async (req, res) => {
   try {
     const page = Number(req.query.page) || 1;
@@ -30,8 +72,8 @@ exports.getAllMeetings = async (req, res) => {
     let sortColumn = "m.Id";
     if (sortBy === "meetingName") sortColumn = "m.MeetingName";
     else if (sortBy === "meetingType") sortColumn = "ISNULL(mt.Name, m.MeetingTypeId)";
-    else if (sortBy === "startDate") sortColumn = "m.StartDate";
-    else if (sortBy === "endDate") sortColumn = "m.EndDate";
+    else if (sortBy === "startDate") sortColumn = "DATEADD(MINUTE, 330, m.StartDate)";
+    else if (sortBy === "endDate") sortColumn = "DATEADD(MINUTE, 330, m.EndDate)";
     else if (sortBy === "department") sortColumn = "ISNULL(d.Department, m.DepartmentId)";
     else if (sortBy === "location") sortColumn = "ISNULL(l.Name, m.LocationId)";
     else if (sortBy === "organizedBy") sortColumn = "ISNULL(e1.FirstName, m.OrganizedBy)";
@@ -62,9 +104,15 @@ exports.getAllMeetings = async (req, res) => {
     
     const result = await sql.query(query);
 
+    const records = result.recordset.map(r => ({
+      ...r,
+      startDate: toIST(r.startDate),
+      endDate: toIST(r.endDate)
+    }));
+
     res.status(200).json({
       total: totalRecords,
-      records: result.recordset
+      records: records
     });
 
   } catch (error) {
@@ -88,7 +136,7 @@ exports.addMeeting = async (req, res) => {
     location,
     organizedBy,
     reporter,
-    attendees,        // ⬅ attendees array coming from frontend
+    attendees,     
     userId
   } = req.body;
 
@@ -100,6 +148,13 @@ exports.addMeeting = async (req, res) => {
   const repInt = reporter ? parseInt(reporter, 10) : null;
   const userIdInt = parseInt(userId, 10);
 
+
+
+
+
+// Convert IST → UTC (MANDATORY)
+const parsedStartDate = istToUTC(startDate);
+const parsedEndDate   = istToUTC(endDate);
   const transaction = new sql.Transaction();
 
   try {
@@ -112,13 +167,15 @@ exports.addMeeting = async (req, res) => {
       INSERT INTO Meetings (
         MeetingName, MeetingTypeId, StartDate, EndDate,
         DepartmentId, LocationId, OrganizedBy, ReporterId,
+        Recipients,
         InsertDate, InsertUserId, IsActive
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${meetingName}, ${mtInt}, ${startDate}, ${endDate},
+        ${meetingName}, ${mtInt}, ${parsedStartDate}, ${parsedEndDate},
         ${deptInt}, ${locInt}, ${orgInt}, ${repInt},
-        GETDATE(), ${userIdInt}, 1
+        ${req.body.recipients ? req.body.recipients.join(',') : null},
+GETUTCDATE(), ${userIdInt}, 1
       )
     `;
 
@@ -145,7 +202,7 @@ exports.addMeeting = async (req, res) => {
           ${at.attendanceStatusId},
           ${at.attendeeId},
           ${meetingId},
-          GETDATE(),
+          GETUTCDATE(),
           ${userId},
           1
         )
@@ -155,6 +212,155 @@ exports.addMeeting = async (req, res) => {
 
     // 3️⃣ COMMIT TRANSACTION
     await transaction.commit();
+
+    // 4️⃣ SEND EMAIL NOTIFICATIONS (Non-blocking)
+    try {
+        const sendEmail = require("../../utils/sendEmail");
+        
+        // 1. Get Internal Attendee Emails
+        let internalEmails = [];
+        if (Array.isArray(attendees) && attendees.length > 0) {
+            const attendeeIds = attendees.map(a => a.attendeeId).filter(id => id).join(',');
+            
+            if (attendeeIds) {
+                const emailResult = await sql.query(`
+                    SELECT Email FROM Employees 
+                    WHERE Id IN (${attendeeIds}) 
+                    AND Email IS NOT NULL 
+                    AND Email != ''
+                `);
+                internalEmails = emailResult.recordset.map(r => r.Email);
+            }
+        }
+
+        // 2. Combine with External Recipients
+        const externalRecipients = Array.isArray(req.body.recipients) ? req.body.recipients : [];
+        const allRecipients = [...new Set([...internalEmails, ...externalRecipients])];
+
+        // 3. Fetch Meeting Type and Location Names
+        let meetingTypeName = 'General';
+        let locationName = 'Not Specified';
+
+        if (mtInt) {
+            try {
+                const mtResult = await sql.query(`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`);
+                if (mtResult.recordset && mtResult.recordset[0]) {
+                    meetingTypeName = mtResult.recordset[0].Name;
+                }
+            } catch (e) {
+                console.error("Error fetching meeting type name:", e);
+            }
+        }
+
+        if (locInt) {
+            try {
+                const locResult = await sql.query(`SELECT Name FROM Locations WHERE Id = ${locInt}`);
+                if (locResult.recordset && locResult.recordset[0]) {
+                    locationName = locResult.recordset[0].Name;
+                }
+            } catch (e) {
+                console.error("Error fetching location name:", e);
+            }
+        }
+
+        // 4. Send Email
+        if (allRecipients.length > 0) {
+            // Fetch Logo from Settings
+            let logoUrl = null;
+            try {
+                const settingsRes = await sql.query`SELECT TOP 1 LogoPath FROM Settings WHERE IsActive = 1 ORDER BY Id DESC`;
+                 if (settingsRes.recordset.length > 0 && settingsRes.recordset[0].LogoPath) {
+                     // Ensure no leading slashes/backslashes
+                     const cleanPath = settingsRes.recordset[0].LogoPath.replace(/^[\/\\]+/, '');
+                     logoUrl = `https://homebutton.in/${cleanPath}`;
+                 }
+            } catch (err) {
+                console.error("Error fetching logo for email:", err);
+            }
+
+            const emailSubject = `Meeting Scheduled: ${meetingName}`;
+            const emailBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-top: 40px; margin-bottom: 40px; }
+    .header { background: linear-gradient(135deg, #6448AE 0%, #8B5CF6 100%); padding: 30px 20px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px; }
+    .content { padding: 40px 30px; color: #333333; }
+    .greeting { font-size: 18px; margin-bottom: 20px; color: #1f2937; }
+    .details-box { background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0; }
+    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .detail-row:last-child { border-bottom: none; }
+    .label { font-weight: 600; color: #6b7280; width: 40%; }
+    .value { font-weight: 500; color: #111827; width: 60%; text-align: right; }
+    .btn-container { text-align: center; margin-top: 35px; }
+    .btn { display: inline-block; background-color: #6448AE; color: #ffffff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; border: 1px solid #50398E; transition: background-color 0.3s; }
+    .btn:hover { background-color: #50398E; }
+    .footer { background-color: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Company Logo" style="max-height: 60px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;">` : ''}
+      <h1>New Meeting Scheduled</h1>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello,</p>
+      <p style="line-height: 1.6; color: #4b5563;">You have been invited to a new meeting using the <strong>Annamalai Traders ERP</strong>. Please review the details below.</p>
+      
+      <div class="details-box">
+        <div class="detail-row">
+          <span class="label">Meeting Details</span>
+          <span class="value" style="color: #6448AE; font-weight: 700;">${meetingName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Type</span>
+          <span class="value">${meetingTypeName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Location</span>
+          <span class="value">${locationName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Date</span>
+          <span class="value">${formatISTTime(startDate).split(' ')[0]}</span> 
+          <!-- Note: formatISTTime returns time, we might want full date here. 
+               Ideally we use a formatter that shows Date + Time. 
+               For now, trusting formatISTTime or using the raw inputs nicely.
+               Let's rely on formatISTTime if it provides what we need, or better yet: -->
+        </div>
+        <div class="detail-row">
+          <span class="label">Time (IST)</span>
+          <span class="value">${formatISTTime(startDate)} - ${formatISTTime(endDate)}</span>
+        </div>
+      </div>
+
+      <div class="btn-container">
+        <a href="https://homebutton.in/" class="btn">View Site</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>&copy; ${new Date().getFullYear()} Annamalai Traders. All rights reserved.</p>
+      <p>This is an automated notification. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+
+            await sendEmail(allRecipients, emailSubject, emailBody);
+            console.log("Emails sent to:", allRecipients);
+        }
+    } catch (emailError) {
+        console.error("EMAIL NOTIFICATION ERROR:", emailError);
+        // Do not fail the request if email fails, just log it
+    }
 
     res.status(201).json({
       message: "Meeting and attendees added successfully",
@@ -203,6 +409,12 @@ exports.updateMeeting = async (req, res) => {
   const orgInt = organizedBy ? parseInt(organizedBy, 10) : null;
   const repInt = reporter ? parseInt(reporter, 10) : null;
 
+
+// Convert IST → UTC (MANDATORY)
+const parsedStartDate = istToUTC(startDate);
+const parsedEndDate   = istToUTC(endDate);
+
+
   const transaction = new sql.Transaction();
 
   try {
@@ -215,14 +427,16 @@ exports.updateMeeting = async (req, res) => {
         SET
         MeetingName = ${meetingName},
         MeetingTypeId = ${mtInt},
-        StartDate = ${startDate},
-        EndDate = ${endDate},
+        StartDate = ${parsedStartDate},
+        EndDate = ${parsedEndDate},
         DepartmentId = ${deptInt},
         LocationId = ${locInt},
         OrganizedBy = ${orgInt},
         ReporterId = ${repInt},
-        UpdateDate = GETDATE(),
-          UpdateUserId = ${userIdInt}
+        Recipients = ${req.body.recipients ? req.body.recipients.join(',') : null},
+       UpdateDate = GETUTCDATE(),
+UpdateUserId = ${userIdInt}
+
       WHERE Id = ${meetingIdInt}
         `;
 
@@ -230,6 +444,14 @@ exports.updateMeeting = async (req, res) => {
     const deleteReq = new sql.Request(transaction);
     await deleteReq.query`
       DELETE FROM MeetingAttendees
+      WHERE MeetingId = ${meetingIdInt}
+    `;
+
+    // 3️⃣ RESET REMINDERS (Crucial for Rescheduling)
+    // We delete previous reminder logs so the scheduler picks this meeting up again as "fresh"
+    const deleteRemindersReq = new sql.Request(transaction);
+    await deleteRemindersReq.query`
+      DELETE FROM MeetingReminders
       WHERE MeetingId = ${meetingIdInt}
     `;
 
@@ -268,6 +490,147 @@ exports.updateMeeting = async (req, res) => {
     }
 
     await transaction.commit();
+
+    // 4️⃣ SEND EMAIL NOTIFICATIONS (Non-blocking)
+    try {
+        const sendEmail = require("../../utils/sendEmail");
+        
+        // 1. Get Internal Attendee Emails
+        let internalEmails = [];
+        if (Array.isArray(attendees) && attendees.length > 0) {
+            const attendeeIds = attendees.map(a => a.attendeeId).filter(id => id).join(',');
+            
+            if (attendeeIds) {
+                const emailResult = await sql.query(`
+                    SELECT Email FROM Employees 
+                    WHERE Id IN (${attendeeIds}) 
+                    AND Email IS NOT NULL 
+                    AND Email != ''
+                `);
+                internalEmails = emailResult.recordset.map(r => r.Email);
+            }
+        }
+
+        // 2. Combine with External Recipients
+        const externalRecipients = Array.isArray(req.body.recipients) ? req.body.recipients : [];
+        const allRecipients = [...new Set([...internalEmails, ...externalRecipients])];
+
+        // 3. Fetch Meeting Type and Location Names
+        let meetingTypeName = 'General';
+        let locationName = 'Not Specified';
+
+        if (mtInt) {
+            try {
+                const mtResult = await sql.query(`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`);
+                if (mtResult.recordset && mtResult.recordset[0]) {
+                    meetingTypeName = mtResult.recordset[0].Name;
+                }
+            } catch (e) {
+                console.error("Error fetching meeting type name:", e);
+            }
+        }
+
+        if (locInt) {
+            try {
+                const locResult = await sql.query(`SELECT Name FROM Locations WHERE Id = ${locInt}`);
+                if (locResult.recordset && locResult.recordset[0]) {
+                    locationName = locResult.recordset[0].Name;
+                }
+            } catch (e) {
+                console.error("Error fetching location name:", e);
+            }
+        }
+
+        // 4. Send Email
+        if (allRecipients.length > 0) {
+            // Fetch Logo from Settings
+            let logoUrl = null;
+            try {
+                const settingsRes = await sql.query`SELECT TOP 1 LogoPath FROM Settings WHERE IsActive = 1 ORDER BY Id DESC`;
+                 if (settingsRes.recordset.length > 0 && settingsRes.recordset[0].LogoPath) {
+                     const cleanPath = settingsRes.recordset[0].LogoPath.replace(/^[\/\\]+/, '');
+                     logoUrl = `https://homebutton.in/${cleanPath}`;
+                 }
+            } catch (err) {
+                console.error("Error fetching logo for email:", err);
+            }
+
+            const emailSubject = `Meeting Scheduled: ${meetingName}`;
+            const emailBody = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { margin: 0; padding: 0; background-color: #f4f4f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-top: 40px; margin-bottom: 40px; }
+    .header { background: linear-gradient(135deg, #6448AE 0%, #8B5CF6 100%); padding: 30px 20px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px; }
+    .content { padding: 40px 30px; color: #333333; }
+    .greeting { font-size: 18px; margin-bottom: 20px; color: #1f2937; }
+    .details-box { background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 20px; margin: 25px 0; }
+    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+    .detail-row:last-child { border-bottom: none; }
+    .label { font-weight: 600; color: #6b7280; width: 40%; }
+    .value { font-weight: 500; color: #111827; width: 60%; text-align: right; }
+    .btn-container { text-align: center; margin-top: 35px; }
+    .btn { display: inline-block; background-color: #6448AE; color: #ffffff !important; padding: 12px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 16px; border: 1px solid #50398E; transition: background-color 0.3s; }
+    .btn:hover { background-color: #50398E; }
+    .footer { background-color: #f9fafb; padding: 20px; text-align: center; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      ${logoUrl ? `<img src="${logoUrl}" alt="Company Logo" style="max-height: 60px; margin-bottom: 15px; display: block; margin-left: auto; margin-right: auto;">` : ''}
+      <h1>Meeting Updated</h1>
+    </div>
+    <div class="content">
+      <p class="greeting">Hello,</p>
+      <p style="line-height: 1.6; color: #4b5563;">The following meeting details have been updated. Please review the changes below.</p>
+      
+      <div class="details-box">
+        <div class="detail-row">
+          <span class="label">Meeting Details</span>
+          <span class="value" style="color: #6448AE; font-weight: 700;">${meetingName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Type</span>
+          <span class="value">${meetingTypeName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Location</span>
+          <span class="value">${locationName}</span>
+        </div>
+        <div class="detail-row">
+          <span class="label">Time (IST)</span>
+          <span class="value">${formatISTTime(startDate)} - ${formatISTTime(endDate)}</span>
+        </div>
+      </div>
+
+      <div class="btn-container">
+        <a href="https://homebutton.in/" class="btn">View Site</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>&copy; ${new Date().getFullYear()} Annamalai Traders. All rights reserved.</p>
+      <p>This is an automated notification. Please do not reply.</p>
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+
+            await sendEmail(allRecipients, emailSubject, emailBody);
+            console.log("Emails sent to:", allRecipients);
+        }
+    } catch (emailError) {
+        console.error("EMAIL NOTIFICATION ERROR:", emailError);
+        // Do not fail the request if email fails, just log it
+    }
+
     res.status(200).json({ message: "Meeting updated successfully" });
 
   } catch (error) {
@@ -290,8 +653,9 @@ exports.deleteMeeting = async (req, res) => {
       UPDATE Meetings
       SET
         IsActive = 0,
-        DeleteDate = GETDATE(),
-        DeleteUserId = ${userId}
+      DeleteDate = GETUTCDATE(),
+      DeleteUserId = ${userId}
+
       WHERE Id = ${id}
     `;
 
@@ -317,8 +681,9 @@ exports.searchMeetings = async (req, res) => {
     let sortColumn = "m.Id";
     if (sortBy === "meetingName") sortColumn = "m.MeetingName";
     else if (sortBy === "meetingType") sortColumn = "ISNULL(mt.Name, m.MeetingTypeId)";
-    else if (sortBy === "startDate") sortColumn = "m.StartDate";
-    else if (sortBy === "endDate") sortColumn = "m.EndDate";
+    else if (sortBy === "startDate") sortColumn = "DATEADD(MINUTE, 330, m.StartDate)";
+    else if (sortBy === "endDate") sortColumn = "DATEADD(MINUTE, 330, m.EndDate)";
+
     else if (sortBy === "department") sortColumn = "ISNULL(d.Department, m.DepartmentId)";
     else if (sortBy === "location") sortColumn = "ISNULL(l.Name, m.LocationId)";
     else if (sortBy === "organizedBy") sortColumn = "ISNULL(e1.FirstName, m.OrganizedBy)";
@@ -356,7 +721,12 @@ exports.searchMeetings = async (req, res) => {
 
     const result = await request.query(query);
 
-    res.status(200).json(result.recordset);
+    const records = result.recordset.map(r => ({
+        ...r,
+        startDate: toIST(r.startDate)
+    }));
+
+    res.status(200).json(records);
 
   } catch (error) {
     console.error("SEARCH MEETINGS ERROR:", error);
@@ -392,7 +762,10 @@ exports.getInactiveMeetings = async (req, res) => {
     `;
 
     res.status(200).json({
-      records: result.recordset
+      records: result.recordset.map(r => ({
+          ...r,
+          startDate: toIST(r.startDate)
+      }))
     });
 
   } catch (error) {
@@ -415,8 +788,9 @@ exports.restoreMeeting = async (req, res) => {
       UPDATE Meetings
       SET
         IsActive = 1,
-        UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
+       UpdateDate = GETUTCDATE(),
+      UpdateUserId = ${userId}
+
       WHERE Id = ${id}
     `;
 
@@ -447,7 +821,8 @@ exports.getMeetingById = async (req, res) => {
         COALESCE(CAST(d.Id AS VARCHAR(50)), m.DepartmentId) AS department,
         COALESCE(CAST(l.Id AS VARCHAR(50)), m.LocationId) AS location,
         COALESCE(CAST(e1.Id AS VARCHAR(50)), m.OrganizedBy) AS organizedBy,
-        COALESCE(CAST(e2.Id AS VARCHAR(50)), m.ReporterId) AS reporter
+        COALESCE(CAST(e2.Id AS VARCHAR(50)), m.ReporterId) AS reporter,
+        m.Recipients
       FROM Meetings m
       LEFT JOIN MeetingTypes mt ON m.MeetingTypeId = mt.Id
       LEFT JOIN Departments d ON m.DepartmentId = d.Id
@@ -483,8 +858,14 @@ exports.getMeetingById = async (req, res) => {
         AND ma.IsActive = 1
     `;
 
+    const meeting = meetingResult.recordset[0];
+    if(meeting) {
+        meeting.startDate = toIST(meeting.startDate);
+        meeting.endDate = toIST(meeting.endDate);
+    }
+
     res.status(200).json({
-      meeting: meetingResult.recordset[0],
+      meeting: meeting,
       attendees: attendeesResult.recordset
     });
 

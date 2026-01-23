@@ -62,12 +62,18 @@ exports.addCategory = async (req, res) => {
   const { name, description, parentCategoryId, userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Categories (Name, Description, ParentCategoryId, InsertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${description}, ${parentCategoryId || null}, ${userId})
     `;
 
-    res.status(200).json({ message: "Category added successfully" });
+    const newId = result.recordset[0].Id;
+
+    res.status(200).json({ 
+        message: "Category added successfully",
+        record: { id: newId, name, description, parentCategoryId }
+    });
 
   } catch (error) {
     console.error("ADD CATEGORY ERROR:", error);

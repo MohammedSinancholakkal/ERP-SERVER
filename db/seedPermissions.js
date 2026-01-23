@@ -366,6 +366,18 @@ const seedPermissions = async () => {
       { key: 'language_view', name: 'View', parent: 'languages' },
       { key: 'language_edit', name: 'Edit', parent: 'languages' },
       { key: 'language_delete', name: 'Delete', parent: 'languages' },
+
+      { key: 'tax_types', name: 'Tax Types', parent: null },
+      { key: 'tax_type_create', name: 'Create', parent: 'tax_types' },
+      { key: 'tax_type_view', name: 'View', parent: 'tax_types' },
+      { key: 'tax_type_edit', name: 'Edit', parent: 'tax_types' },
+      { key: 'tax_type_delete', name: 'Delete', parent: 'tax_types' },
+
+      { key: 'tax_percentages', name: 'Tax Percentages', parent: null },
+      { key: 'tax_percentage_create', name: 'Create', parent: 'tax_percentages' },
+      { key: 'tax_percentage_view', name: 'View', parent: 'tax_percentages' },
+      { key: 'tax_percentage_edit', name: 'Edit', parent: 'tax_percentages' },
+      { key: 'tax_percentage_delete', name: 'Delete', parent: 'tax_percentages' },
     ];
 
     // 3. Insert Permissions

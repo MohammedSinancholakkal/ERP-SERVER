@@ -120,7 +120,7 @@ exports.addProduct = async (req, res) => {
       userId
     } = req.body;
 
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Products (
         Barcode, SN, ProductName, Model, UnitPrice,
         UnitsInStock, UnitsOnOrder, ReorderLevel,
@@ -129,6 +129,7 @@ exports.addProduct = async (req, res) => {
         TaxPercentageId,
         InsertUserId
       )
+      OUTPUT INSERTED.Id
       VALUES (
         ${Barcode}, ${SN}, ${ProductName}, ${Model}, ${UnitPrice},
         ${UnitsInStock}, ${UnitsOnOrder}, ${ReorderLevel},
@@ -139,7 +140,19 @@ exports.addProduct = async (req, res) => {
       )
     `;
 
-    res.status(200).json({ message: "Product added successfully" });
+    const newId = result.recordset[0].Id;
+
+    res.status(200).json({ 
+        message: "Product added successfully",
+        record: {
+            id: newId,
+            ProductName,
+            UnitId,
+            BrandId,
+            UnitPrice,
+            UnitsInStock
+        }
+    });
 
   } catch (error) {
     console.error("ADD PRODUCT ERROR:", error);

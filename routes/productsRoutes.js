@@ -4,17 +4,21 @@ const productsController = require("../controllers/inventoryController/productsC
 const checkPermission = require("../middleware/checkPermission");
 const PERMISSIONS = require("../constants/permissions");
 
-// CRUD
-router.get("/", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getAllProducts);
+// POST operations (add)
 router.post("/add", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.CREATE), productsController.addProduct);
-router.put("/update/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.EDIT), productsController.updateProduct);
-router.delete("/delete/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.DELETE), productsController.deleteProduct);
 
-// Search
+// 🔥 SEARCH (MUST COME BEFORE :id)
 router.get("/search", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.searchProducts);
 
-// Inactive + Restore
+// Inactive operations
 router.get("/inactive", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getInactiveProducts);
+
+// GET all (Paginated) - MUST COME AFTER /search AND /inactive
+router.get("/", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getAllProducts);
+
+// PUT/DELETE by ID - MUST COME AFTER /:id alternatives
+router.put("/update/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.EDIT), productsController.updateProduct);
+router.delete("/delete/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.DELETE), productsController.deleteProduct);
 router.put("/restore/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.DELETE), productsController.restoreProduct);
 
 module.exports = router;

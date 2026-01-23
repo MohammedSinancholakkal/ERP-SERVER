@@ -95,7 +95,7 @@ exports.getPurchaseOrderById = async (req, res) => {
         p.*, 
         p.PONumber AS poNumber,
         s.CompanyName AS supplierName,
-        s.Address,
+        s.AddressLine1 AS Address,
         s.GSTIN AS supplierGSTIN,
         s.Phone
       FROM PurchaseOrders p
@@ -414,7 +414,6 @@ exports.getInactivePurchaseOrders = async (req, res) => {
         p.VNo AS vno,
         p.POSequence AS poSequence,
         p.TotalDiscount AS totalDiscount,
-        p.ShippingCost AS shippingCost,
         p.ShippingCost AS shippingCost,
         p.[Change] AS change,
         p.VehicleNo AS vehicleNo,

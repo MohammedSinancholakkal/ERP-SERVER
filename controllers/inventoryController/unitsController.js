@@ -58,12 +58,18 @@ exports.addUnit = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       INSERT INTO Units (Name, Description, InsertUserId)
+      OUTPUT INSERTED.Id
       VALUES (${name}, ${description}, ${userId})
     `;
 
-    res.status(200).json({ message: "Unit added successfully" });
+    const newId = result.recordset[0].Id; 
+
+    res.status(200).json({ 
+        message: "Unit added successfully", 
+        record: { id: newId, name, description }
+    });
 
   } catch (error) {
     console.error("ADD UNIT ERROR:", error);
