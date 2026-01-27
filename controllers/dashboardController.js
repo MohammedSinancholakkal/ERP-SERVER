@@ -9,10 +9,13 @@ exports.getDashboardStats = async (req, res) => {
     const currentYear = today.getFullYear();
     const currentMonth = today.getMonth() + 1;
 
+    // Get local date string YYYY-MM-DD
+    const localDate = new Date().toLocaleDateString('en-CA'); 
+
     // 1. TOP CARDS COUNTS
     const countsResult = await sql.query`
       SELECT 
-        ISNULL((SELECT SUM(GrandTotal) FROM Sales WHERE IsActive = 1 AND CAST(Date AS DATE) = CAST(GETDATE() AS DATE)), 0) AS TodaysSale,
+        ISNULL((SELECT SUM(GrandTotal) FROM Sales WHERE IsActive = 1 AND CAST(Date AS DATE) = ${localDate}), 0) AS TodaysSale,
         (SELECT COUNT(*) FROM Suppliers WHERE IsActive = 1) AS TotalSuppliers,
         (SELECT COUNT(*) FROM Customers WHERE IsActive = 1) AS TotalCustomers,
         (SELECT COUNT(*) FROM Products WHERE IsActive = 1) AS TotalProducts

@@ -14,7 +14,11 @@ router.get("/search", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), prod
 router.get("/inactive", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getInactiveProducts);
 
 // GET all (Paginated) - MUST COME AFTER /search AND /inactive
+// GET all (Paginated) - MUST COME AFTER /search AND /inactive
 router.get("/", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getAllProducts);
+
+// GET by ID
+router.get("/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.VIEW), productsController.getProductById);
 
 // PUT/DELETE by ID - MUST COME AFTER /:id alternatives
 router.put("/update/:id", checkPermission(PERMISSIONS.INVENTORY.PRODUCTS.EDIT), productsController.updateProduct);

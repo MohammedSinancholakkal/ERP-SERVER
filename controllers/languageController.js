@@ -131,10 +131,16 @@ exports.searchLanguages = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
-    const sortColumn = sortBy === "name" ? "LanguageName" : "Id";
+    const order = (req.query.order || "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
+    
+    // Map sortBy to actual column names to prevent SQL injection
+    let sortColumn = "Id";
+    if (sortBy === "name" || sortBy === "languageName") sortColumn = "LanguageName";
+    if (sortBy === "languageId") sortColumn = "LanguageId";
 
-    const result = await sql.query`
+    // Use manual string construction for identifiers (ORDER BY) 
+    // and parameters for values (WHERE LIKE)
+    const query = `
       SELECT 
         Id AS id,
         LanguageId AS languageId,
@@ -142,11 +148,16 @@ exports.searchLanguages = async (req, res) => {
       FROM Languages
       WHERE 
         IsActive = 1 AND (
-          LanguageId LIKE '%' + ${q} + '%'
-          OR LanguageName LIKE '%' + ${q} + '%'
+          LanguageId LIKE '%' + @q + '%'
+          OR LanguageName LIKE '%' + @q + '%'
         )
       ORDER BY ${sortColumn} ${order}
     `;
+
+    const request = new sql.Request();
+    request.input("q", sql.NVarChar, q || ""); // Handle empty q safety
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
 

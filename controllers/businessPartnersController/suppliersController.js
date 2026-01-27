@@ -351,34 +351,34 @@ exports.getInactiveSuppliers = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id AS id,
-        CompanyName AS companyName,
-        CountryId AS countryId,
-        StateId AS stateId,
-        CityId AS cityId,
-        ContactName AS contactName,
-        ContactTitle AS contactTitle,
-        AddressLine1 AS addressLine1,
-        AddressLine2 AS addressLine2,
-        RegionId AS regionId,
-        PostalCode AS postalCode,
-        Phone AS phone,
-        Fax AS fax,
-        Website AS website,
-        Email AS email,
-        EmailAddress AS emailAddress,
-        PreviousCreditBalance AS previousCreditBalance,
-        SupplierGroupId AS supplierGroupId,
-        PreviousCreditBalance AS previousCreditBalance,
-        SupplierGroupId AS supplierGroupId,
-        OrderBooker AS orderBooker,
-        PAN AS pan,
-        GSTIN AS gstin,
-        DeleteDate,
-        DeleteUserId
+        Suppliers.Id AS id,
+        Suppliers.CompanyName AS companyName,
+        Suppliers.CountryId AS countryId,
+        Suppliers.StateId AS stateId,
+        Suppliers.CityId AS cityId,
+        Suppliers.ContactName AS contactName,
+        Suppliers.ContactTitle AS contactTitle,
+        Suppliers.AddressLine1 AS addressLine1,
+        Suppliers.AddressLine2 AS addressLine2,
+        Suppliers.RegionId AS regionId,
+        Suppliers.PostalCode AS postalCode,
+        Suppliers.Phone AS phone,
+        Suppliers.Fax AS fax,
+        Suppliers.Website AS website,
+        Suppliers.Email AS email,
+        Suppliers.EmailAddress AS emailAddress,
+        Suppliers.PreviousCreditBalance AS previousCreditBalance,
+        Suppliers.SupplierGroupId AS supplierGroupId,
+        SG.GroupName AS supplierGroupName,
+        Suppliers.OrderBooker AS orderBooker,
+        Suppliers.PAN AS pan,
+        Suppliers.GSTIN AS gstin,
+        Suppliers.DeleteDate,
+        Suppliers.DeleteUserId
       FROM Suppliers
-      WHERE IsActive = 0
-      ORDER BY DeleteDate DESC
+      LEFT JOIN SupplierGroups SG ON Suppliers.SupplierGroupId = SG.Id
+      WHERE Suppliers.IsActive = 0
+      ORDER BY Suppliers.DeleteDate DESC
     `;
 
     res.status(200).json({ records: result.recordset });

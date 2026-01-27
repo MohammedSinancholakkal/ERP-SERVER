@@ -367,34 +367,39 @@ exports.getInactiveCustomers = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id AS id,
-        Name AS name,
-        ContactName AS contactName,
-        ContactTitle AS contactTitle,
-        CountryId AS countryId,
-        StateId AS stateId,
-        CityId AS cityId,
-        AddressLine1 AS addressLine1,
-        AddressLine2 AS addressLine2,
-        RegionId AS regionId,
-        PostalCode AS postalCode,
-        Phone AS phone,
-        Fax AS fax,
-        Website AS website,
-        Email AS email,
-        EmailAddress AS emailAddress,
-        PreviousCreditBalance AS previousCreditBalance,
-        CustomerGroupId AS customerGroupId,
-        CustomerGroupId AS customerGroupId,
-        SalesMan AS salesMan,
-        OrderBooker AS orderBooker,
-        PAN AS pan,
-        GSTTIN AS gstin,
-        DeleteDate,
-        DeleteUserId
+        Customers.Id AS id,
+        Customers.Name AS name,
+        Customers.ContactName AS contactName,
+        Customers.ContactTitle AS contactTitle,
+        Customers.CountryId AS countryId,
+        Customers.StateId AS stateId,
+        Customers.CityId AS cityId,
+        Customers.AddressLine1 AS addressLine1,
+        Customers.AddressLine2 AS addressLine2,
+        Customers.RegionId AS regionId,
+        Customers.PostalCode AS postalCode,
+        Customers.Phone AS phone,
+        Customers.Fax AS fax,
+        Customers.Website AS website,
+        Customers.Email AS email,
+        Customers.EmailAddress AS emailAddress,
+        Customers.PreviousCreditBalance AS previousCreditBalance,
+        Customers.CustomerGroupId AS customerGroupId,
+        CG.GroupName AS customerGroupName,
+        Customers.SalesMan AS salesMan,
+        E1.FirstName + ' ' + E1.LastName AS salesManName,
+        Customers.OrderBooker AS orderBooker,
+        E2.FirstName + ' ' + E2.LastName AS orderBookerName,
+        Customers.PAN AS pan,
+        Customers.GSTTIN AS gstin,
+        Customers.DeleteDate,
+        Customers.DeleteUserId
       FROM Customers
-      WHERE IsActive = 0
-      ORDER BY DeleteDate DESC
+      LEFT JOIN CustomerGroups CG ON Customers.CustomerGroupId = CG.Id
+      LEFT JOIN Employees E1 ON Customers.SalesMan = E1.Id
+      LEFT JOIN Employees E2 ON Customers.OrderBooker = E2.Id
+      WHERE Customers.IsActive = 0
+      ORDER BY Customers.DeleteDate DESC
     `;
 
     res.status(200).json({

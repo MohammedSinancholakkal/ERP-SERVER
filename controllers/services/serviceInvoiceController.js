@@ -440,13 +440,21 @@ exports.getInactiveServiceInvoices = async (req, res) => {
     const result = await sql.query`
       SELECT
         si.Id AS id,
-        si.Date,
-        si.GrandTotal,
+        si.Date AS date,
+        si.GrandTotal AS grandTotal,
+        si.NetTotal AS netTotal,
+        si.PaidAmount AS paidAmount,
+        si.Due AS due,
+        si.Change AS change,
+        si.PaymentAccount AS paymentAccount,
+        si.EmployeeId AS employeeId,
         si.DeleteDate,
         si.DeleteUserId,
-        c.Name AS customerName
+        c.Name AS customerName,
+        LTRIM(RTRIM(e.FirstName + ' ' + e.LastName)) AS employeeName
       FROM ServiceInvoices si
       LEFT JOIN Customers c ON si.CustomerId = c.Id
+      LEFT JOIN Employees e ON si.EmployeeId = e.Id
       WHERE si.IsActive = 0
       ORDER BY si.DeleteDate DESC
     `;

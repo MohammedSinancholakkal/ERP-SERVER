@@ -127,10 +127,16 @@ exports.searchCurrencies = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
-    const sortColumn = sortBy === "name" ? "CurrencyName" : "Id";
-
-    const result = await sql.query`
+    const order = (req.query.order || "ASC").toUpperCase() === "DESC" ? "DESC" : "ASC";
+    
+    // Map sortBy to actual column names to prevent SQL injection
+    let sortColumn = "Id";
+    if (sortBy === "name" || sortBy === "currencyName") sortColumn = "CurrencyName";
+    if (sortBy === "symbol" || sortBy === "currencySymbol") sortColumn = "CurrencySymbol";
+    
+    // Use manual string construction for identifiers (ORDER BY) 
+    // and parameters for values (WHERE LIKE)
+    const query = `
       SELECT 
         Id AS id,
         CurrencyName AS currencyName,
@@ -138,10 +144,15 @@ exports.searchCurrencies = async (req, res) => {
       FROM Currencies
       WHERE 
         IsActive = 1 AND 
-        (CurrencyName LIKE '%' + ${q} + '%' 
-         OR CurrencySymbol LIKE '%' + ${q} + '%')
+        (CurrencyName LIKE '%' + @q + '%' 
+         OR CurrencySymbol LIKE '%' + @q + '%')
       ORDER BY ${sortColumn} ${order}
     `;
+
+    const request = new sql.Request();
+    request.input("q", sql.NVarChar, q || ""); // Handle empty q safety
+
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

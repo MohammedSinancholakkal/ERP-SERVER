@@ -747,9 +747,11 @@ exports.getInactiveMeetings = async (req, res) => {
         m.MeetingName AS meetingName,
         ISNULL(mt.Name, m.MeetingTypeId) AS meetingType,
         m.StartDate AS startDate,
+        m.EndDate AS endDate,
         ISNULL(d.Department, m.DepartmentId) AS department,
         ISNULL(l.Name, m.LocationId) AS location,
         ISNULL(e1.FirstName + ' ' + ISNULL(e1.LastName, ''), m.OrganizedBy) AS organizedBy,
+        ISNULL(e2.FirstName + ' ' + ISNULL(e2.LastName, ''), m.ReporterId) AS reporter,
         m.DeleteDate,
         m.DeleteUserId
       FROM Meetings m
@@ -757,6 +759,7 @@ exports.getInactiveMeetings = async (req, res) => {
       LEFT JOIN Departments d ON m.DepartmentId = CAST(d.Id AS VARCHAR(50))
       LEFT JOIN Locations l ON m.LocationId = CAST(l.Id AS VARCHAR(50))
       LEFT JOIN Employees e1 ON m.OrganizedBy = CAST(e1.Id AS VARCHAR(50))
+      LEFT JOIN Employees e2 ON m.ReporterId = CAST(e2.Id AS VARCHAR(50))
       WHERE m.IsActive = 0
       ORDER BY m.DeleteDate DESC
     `;
@@ -764,7 +767,8 @@ exports.getInactiveMeetings = async (req, res) => {
     res.status(200).json({
       records: result.recordset.map(r => ({
           ...r,
-          startDate: toIST(r.startDate)
+          startDate: toIST(r.startDate),
+          endDate: toIST(r.endDate)
       }))
     });
 

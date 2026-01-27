@@ -111,7 +111,6 @@ ERP_SERVER.use(express.static(path.join(__dirname, 'public')));
 ERP_SERVER.use('/public', express.static(path.join(__dirname, 'public')));
 
 // 🛡️ SECURITY & CORS
-const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 
 // ERP_SERVER.use(helmet(...)); // 🔴 DISABLED TEMPORARILY FOR DEBUGGING

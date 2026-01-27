@@ -94,6 +94,28 @@ exports.getAllProducts = async (req, res) => {
 
 
 // =============================================================
+// GET PRODUCT BY ID
+// =============================================================
+exports.getProductById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await sql.query`
+      SELECT * FROM Products WITH (NOLOCK) WHERE Id = ${id}
+    `;
+
+    if (result.recordset.length > 0) {
+      res.status(200).json(result.recordset[0]);
+    } else {
+      res.status(404).json({ message: "Product not found" });
+    }
+  } catch (error) {
+    console.error("GET PRODUCT BY ID ERROR:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+
+// =============================================================
 // ADD PRODUCT
 // =============================================================
 exports.addProduct = async (req, res) => {
@@ -119,6 +141,10 @@ exports.addProduct = async (req, res) => {
       TaxPercentageId,
       userId
     } = req.body;
+
+    if (Colour && (Colour.length < 2 || Colour.length > 100)) {
+        return res.status(400).json({ message: "Colour must be between 2 and 100 characters" });
+    }
 
     const result = await sql.query`
       INSERT INTO Products (
@@ -188,6 +214,10 @@ exports.updateProduct = async (req, res) => {
       TaxPercentageId,
       userId
     } = req.body;
+
+    if (Colour && (Colour.length < 2 || Colour.length > 100)) {
+        return res.status(400).json({ message: "Colour must be between 2 and 100 characters" });
+    }
 
     console.log("Updating Product:", { id, ...req.body });
 
