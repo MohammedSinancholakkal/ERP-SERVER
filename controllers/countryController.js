@@ -160,8 +160,6 @@ exports.searchCountries = async (req, res) => {
 };
 
 
-
-
 // inactive
 // =============================================================
 // GET INACTIVE COUNTRIES (soft-deleted entries)

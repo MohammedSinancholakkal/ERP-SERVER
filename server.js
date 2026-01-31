@@ -233,6 +233,10 @@ ERP_SERVER.use("/api/permissions", permissionRoutes);
 ERP_SERVER.use("/api/dashboard", dashboardRoutes);
 // 🟢 FINANCIAL ROUTES
 ERP_SERVER.use("/api/chart-of-accounts", require("./routes/chartOfAccountsRoutes"));
+ERP_SERVER.use("/api/debit-vouchers", require("./routes/debitVoucherRoutes"));
+ERP_SERVER.use("/api/credit-vouchers", require("./routes/creditVoucherRoutes"));
+ERP_SERVER.use("/api/contra-vouchers", require("./routes/contraVoucherRoutes"));
+ERP_SERVER.use("/api/journal-vouchers", require("./routes/journalVoucherRoutes"));
 ERP_SERVER.use("/api/tax-types", require("./routes/taxTypeRoutes"));
 ERP_SERVER.use("/api/tax-percentages", require("./routes/taxPercentageRoutes"));
 
