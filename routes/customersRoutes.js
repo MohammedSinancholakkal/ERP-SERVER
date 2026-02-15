@@ -15,6 +15,7 @@ router.get("/search", checkPermission(PERMISSIONS.CUSTOMERS.VIEW), customersCont
 
 // Inactive + Restore
 router.get("/inactive", checkPermission(PERMISSIONS.CUSTOMERS.VIEW), customersController.getInactiveCustomers);
+router.get("/receivable-report", checkPermission(PERMISSIONS.CUSTOMERS.VIEW), customersController.getCustomerReceivables);
 router.put("/restore/:id", checkPermission(PERMISSIONS.CUSTOMERS.DELETE), customersController.restoreCustomer);
 
 router.get("/:id", checkPermission(PERMISSIONS.CUSTOMERS.VIEW), customersController.getCustomerById);

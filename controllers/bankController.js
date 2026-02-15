@@ -149,7 +149,8 @@ exports.getAllBanks = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "BankName"; 
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "Id";
     if (sortBy === "BankName") sortColumn = "BankName";

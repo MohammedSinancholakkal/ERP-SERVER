@@ -18,7 +18,8 @@ exports.getTaxPercentages = async (req, res) => {
 
     // PAGINATED LIST
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "percentage" ? "percentage" : "id";
 
     const query = `
@@ -118,7 +119,8 @@ exports.searchTaxPercentages = async (req, res) => {
   try {
     // Assuming search by percentage value converted to string
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "percentage" ? "percentage" : "id";
 
     const request = new sql.Request();

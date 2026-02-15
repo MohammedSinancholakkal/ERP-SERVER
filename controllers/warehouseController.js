@@ -30,7 +30,8 @@ exports.getAllWarehouses = async (req, res) => {
 
     // Fetch records
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "W.Id";
     if (sortBy === "name") sortColumn = "W.Name";
@@ -181,7 +182,8 @@ exports.searchWarehouses = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "W.Id";
     if (sortBy === "name") sortColumn = "W.Name";

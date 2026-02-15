@@ -13,6 +13,7 @@ router.get("/", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController
 router.put("/update/:id", checkPermission(PERMISSIONS.SUPPLIERS.EDIT), suppliersController.updateSupplier);
 // Inactive + Restore (MUST BE BEFORE /:id)
 router.get("/inactive", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.getInactiveSuppliers);
+router.get("/payable-report", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.getSupplierPayables);
 router.put("/restore/:id", checkPermission(PERMISSIONS.SUPPLIERS.DELETE), suppliersController.restoreSupplier);
 
 router.get("/search", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.searchSuppliers);

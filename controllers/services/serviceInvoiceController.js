@@ -215,6 +215,33 @@ exports.addServiceInvoice = async (req, res) => {
     insertUserId
   } = req.body;
 
+  // Robust Payment Account Lookup
+  let finalPaymentAccount = paymentAccount;
+  try {
+      if (paymentAccount) {
+          // 1. Try Exact Match
+          let accResult = await sql.query`SELECT HeadName FROM Accounts WHERE HeadName = ${paymentAccount}`;
+          
+          if (accResult.recordset.length > 0) {
+              finalPaymentAccount = accResult.recordset[0].HeadName;
+          } else {
+              // 2. Try Exact "Cash In Hand" or "Cash At Hand" if input looks like cash
+              const paLower = paymentAccount.toLowerCase();
+              if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
+                   let cashRes = await sql.query`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`;
+                   if (cashRes.recordset.length > 0) finalPaymentAccount = cashRes.recordset[0].HeadName;
+              } 
+              // 3. Try "Cash at Bank" variations
+              else if (paLower.includes("bank")) {
+                   let bankRes = await sql.query`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`;
+                   if (bankRes.recordset.length > 0) finalPaymentAccount = bankRes.recordset[0].HeadName;
+              }
+          }
+      }
+  } catch (err) {
+      console.error("Payment Account Lookup Error", err);
+  }
+
   const transaction = new sql.Transaction();
 
   try {
@@ -238,7 +265,7 @@ exports.addServiceInvoice = async (req, res) => {
         ${discount}, ${totalDiscount}, ${totalTax}, ${shippingCost},
         ${taxTypeId}, ${igstRate}, ${cgstRate}, ${sgstRate}, ${noTax},
         ${grandTotal}, ${netTotal},
-        ${paidAmount}, ${due}, ${change}, ${paymentAccount},
+        ${paidAmount}, ${due}, ${change}, ${finalPaymentAccount},
         ${details}, ${vno}, ${insertUserId}
       )
     `;
@@ -317,6 +344,28 @@ exports.updateServiceInvoice = async (req, res) => {
     updateUserId
   } = req.body;
 
+  // Robust Payment Account Lookup (For Update)
+  let finalPaymentAccount = paymentAccount;
+  try {
+      if (paymentAccount) {
+          let accResult = await sql.query`SELECT HeadName FROM Accounts WHERE HeadName = ${paymentAccount}`;
+          if (accResult.recordset.length > 0) {
+              finalPaymentAccount = accResult.recordset[0].HeadName;
+          } else {
+              const paLower = paymentAccount.toLowerCase();
+              if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
+                   let cashRes = await sql.query`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`;
+                   if (cashRes.recordset.length > 0) finalPaymentAccount = cashRes.recordset[0].HeadName;
+              } else if (paLower.includes("bank")) {
+                   let bankRes = await sql.query`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`;
+                   if (bankRes.recordset.length > 0) finalPaymentAccount = bankRes.recordset[0].HeadName;
+              }
+          }
+      }
+  } catch (err) {
+      console.error("Payment Account Lookup Error", err);
+  }
+
   const transaction = new sql.Transaction();
 
   try {
@@ -345,7 +394,7 @@ exports.updateServiceInvoice = async (req, res) => {
         PaidAmount = ${paidAmount},
         Due = ${due},
         Change = ${change},
-        PaymentAccount = ${paymentAccount},
+        PaymentAccount = ${finalPaymentAccount},
         Details = ${details},
         VNo = ${vno},
         UpdateDate = GETDATE(),

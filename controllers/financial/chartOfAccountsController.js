@@ -6,7 +6,19 @@ const sql = require("../../db/dbConfig");
 exports.getAllHeads = async (req, res) => {
   try {
     const showInactive = req.query.showInactive === 'true';
+    const requestFyId = req.query.fyId; // Optional: Allow frontend to pass specific FY
+
     const pool = await sql.connect();
+
+    // 0. Determine Financial Year
+    let fyId = requestFyId;
+    if (!fyId) {
+        // If not provided, find the ACTIVE one
+        const fyRes = await pool.request().query("SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1");
+        if (fyRes.recordset.length > 0) {
+            fyId = fyRes.recordset[0].Id;
+        }
+    }
 
     // 1. Get Accounts
     let baseQuery = `
@@ -33,29 +45,33 @@ exports.getAllHeads = async (req, res) => {
     const accountsResult = await pool.request().query(baseQuery);
     const accounts = accountsResult.recordset;
 
-    // 2. Get Balances from Transactions
-    // Opening Balance: IsOpening=1
-    // Current Balance: All Active Transactions (Debit - Credit)
-    // IMPORTANT: Join on COAId which corresponds to Account Id
-    const balQuery = `
-      SELECT 
-        COAId,
-        SUM(CASE WHEN IsOpening = 1 THEN (ISNULL(Debit,0) - ISNULL(Credit,0)) ELSE 0 END) as DirectOpening,
-        SUM(ISNULL(Debit,0) - ISNULL(Credit,0)) as DirectBalance
-      FROM Transactions
-      WHERE IsActive = 1
-      GROUP BY COAId
-    `;
-    const balResult = await pool.request().query(balQuery);
+    // 2. Get Balances from Transactions (FILTERED BY FY)
+    // Opening Balance: IsOpening=1 AND FYId = @fyId
+    // Current Balance: All Active Transactions (Debit - Credit) AND FYId = @fyId
     
-    // Create Map
-    const balMap = {};
-    balResult.recordset.forEach(r => {
-        balMap[r.COAId] = {
-            opening: r.DirectOpening,
-            balance: r.DirectBalance
-        };
-    });
+    let balMap = {};
+
+    if (fyId) {
+        const balQuery = `
+          SELECT 
+            COAId,
+            SUM(CASE WHEN IsOpening = 1 THEN (ISNULL(Debit,0) - ISNULL(Credit,0)) ELSE 0 END) as DirectOpening,
+            SUM(ISNULL(Debit,0) - ISNULL(Credit,0)) as DirectBalance
+          FROM Transactions
+          WHERE IsActive = 1 AND FYId = @fyId
+          GROUP BY COAId
+        `;
+        const balResult = await pool.request()
+            .input('fyId', sql.Int, fyId)
+            .query(balQuery);
+            
+        balResult.recordset.forEach(r => {
+            balMap[r.COAId] = {
+                opening: r.DirectOpening,
+                balance: r.DirectBalance
+            };
+        });
+    }
 
     // 3. Merge
     const enriched = accounts.map(a => {
@@ -119,6 +135,7 @@ exports.addOpeningBalance = async (req, res) => {
 
         // 3. Duplicate Logic: One Opening Balance per Account per FY
         // Check if there is already an Opening Transaction for this COAId in this FY
+        /*
         const dupCheck = await pool.request()
             .input('coaId', sql.Int, selectedAccount.Id)
             .input('fyId', sql.Int, fyId)
@@ -127,66 +144,29 @@ exports.addOpeningBalance = async (req, res) => {
         if (dupCheck.recordset.length > 0) {
             return res.status(400).json({ message: "Opening Balance already exists for this account in the current Financial Year." });
         }
+        */
 
-        // 4. Find or Create 'Opening Balance Adjustment' Account (Equity)
-        let adjAccount;
-        const adjRes = await pool.request()
-            .query("SELECT TOP 1 Id, HeadName FROM Accounts WHERE HeadName = 'Opening Balance Adjustment'");
-        
-        if (adjRes.recordset.length > 0) {
-            adjAccount = adjRes.recordset[0];
-        } else {
-            // Check for Equity
-            const equityRes = await pool.request().query("SELECT HeadCode FROM Accounts WHERE HeadName = 'Equity'");
-            let parentCode = '0';
-            let headLevel = 1;
-            
-            if(equityRes.recordset.length > 0) {
-                parentCode = equityRes.recordset[0].HeadCode;
-                headLevel = 2;
-            }
 
-            const newCode = await generateHeadCode(pool, parentCode, headLevel - 1);
-            
-            const createRes = await pool.request()
-                .input('code', sql.VarChar, newCode)
-                .input('name', sql.VarChar, 'Opening Balance Adjustment')
-                .input('parent', sql.VarChar, parentCode)
-                .input('level', sql.Int, headLevel)
-                .input('uid', sql.Int, userId || 1)
-                .query(`
-                    INSERT INTO Accounts (HeadCode, HeadName, ParentHead, PHeadName, HeadLevel, HeadType, IsTransaction, IsGL, IsActive, InsertUserId, InsertDate)
-                    OUTPUT INSERTED.Id, INSERTED.HeadName
-                    VALUES (@code, @name, @parent, 'Equity', @level, 'Equity', 1, 1, 1, @uid, GETDATE())
-                `);
-            adjAccount = createRes.recordset[0];
-        }
 
         // 5. Prepare Transactions
         const countRes = await pool.request().query("SELECT COUNT(*) as count FROM Transactions WHERE Vtype = 'OPENING'");
         const vno = `OP-${(countRes.recordset[0].count + 1).toString().padStart(4, '0')}`;
         
         let debit1 = 0, credit1 = 0;
-        let debit2 = 0, credit2 = 0;
 
         // Entry 1: User Selected Account
         if (balanceType === 'Debit') {
             debit1 = transactionAmount;
-            // Entry 2: Adjustment Account must be Credit
-            credit2 = transactionAmount;
         } else {
             credit1 = transactionAmount;
-            // Entry 2: Adjustment Account must be Debit
-            debit2 = transactionAmount;
         }
 
-        // Insert Both with FYId
+        // Insert Single Entry
         const insertQ = `
             INSERT INTO Transactions 
             (VNo, Vtype, VDate, COAId, COA, Narration, Debit, Credit, IsPosted, IsAppove, IsOpening, InsertDate, InsertUserId, IsActive, FYId)
             VALUES
-            (@vno, 'OPENING', @date, @id1, @name1, @rem, @d1, @c1, 1, 1, 1, GETDATE(), @uid, 1, @fyId),
-            (@vno, 'OPENING', @date, @id2, @name2, @rem, @d2, @c2, 1, 1, 1, GETDATE(), @uid, 1, @fyId)
+            (@vno, 'OPENING', @date, @id1, @name1, @rem, @d1, @c1, 1, 1, 1, GETDATE(), @uid, 1, @fyId)
         `;
 
         await pool.request()
@@ -194,15 +174,10 @@ exports.addOpeningBalance = async (req, res) => {
             .input('date', sql.DateTime, vdate)
             // Row 1
             .input('id1', sql.Int, selectedAccount.Id)
-            .input('name1', sql.VarChar, selectedAccount.HeadName)
+            .input('name1', sql.VarChar, selectedAccount.HeadCode)
             .input('rem', sql.VarChar, remark)
             .input('d1', sql.Decimal(18,2), debit1)
             .input('c1', sql.Decimal(18,2), credit1)
-            // Row 2
-            .input('id2', sql.Int, adjAccount.Id)
-            .input('name2', sql.VarChar, adjAccount.HeadName)
-            .input('d2', sql.Decimal(18,2), debit2)
-            .input('c2', sql.Decimal(18,2), credit2)
             
             .input('uid', sql.Int, userId)
             .input('fyId', sql.Int, fyId)

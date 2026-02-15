@@ -18,7 +18,8 @@ exports.getAllAttendeeTypes = async (req, res) => {
     // Paginated rows  
     // Paginated rows
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `
@@ -129,7 +130,8 @@ exports.searchAttendeeTypes = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `

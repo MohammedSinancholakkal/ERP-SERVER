@@ -19,7 +19,8 @@ exports.getAllSupplierGroups = async (req, res) => {
 
     // Fetch paginated records
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "GroupName" : "Id";
 
     const query = `
@@ -133,7 +134,8 @@ exports.searchSupplierGroups = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "GroupName" : "Id";
 
     const query = `

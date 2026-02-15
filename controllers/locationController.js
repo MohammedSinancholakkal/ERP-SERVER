@@ -26,7 +26,8 @@ exports.getAllLocations = async (req, res) => {
     `);
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "L.Id";
     if (sortBy === "name") sortColumn = "L.Name";
@@ -172,7 +173,8 @@ exports.searchLocations = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "L.Id";
     if (sortBy === "name") sortColumn = "L.Name";

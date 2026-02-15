@@ -1,34 +1,55 @@
-[
-  {
-    "Id": 9,
-    "HeadCode": "10102",
-    "HeadName": "Cash & Cash Equivalent",
-    "ParentHead": 101,
-    "PHeadName": "Current Asset",
-    "HeadLevel": 3
-  },
-  {
-    "Id": 10,
-    "HeadCode": "1010201",
-    "HeadName": "Cash In Hand ",
-    "ParentHead": 10102,
-    "PHeadName": "Cash & Cash Equivalent",
-    "HeadLevel": 4
-  },
-  {
-    "Id": 11,
-    "HeadCode": "1010202",
-    "HeadName": "Cash At Bank",
-    "ParentHead": 10102,
-    "PHeadName": "Cash & Cash Equivalent",
-    "HeadLevel": 4
-  },
-  {
-    "Id": 7,
-    "HeadCode": "102",
-    "HeadName": "Non Current Asset",
-    "ParentHead": 1,
-    "PHeadName": "Assets",
-    "HeadLevel": 2
-  }
-]
+{
+  "supplier": [
+    {
+      "Id": 22,
+      "CompanyName": "suplierrrr",
+      "COAId": 87,
+      "PreviousCreditBalance": 0
+    }
+  ],
+  "purchases": [
+    {
+      "Id": 70,
+      "InvoiceNo": "",
+      "VNo": "20260214053000000",
+      "Date": "2026-02-14T00:00:00.000Z",
+      "GrandTotal": 1000,
+      "PaidAmount": 1180,
+      "Due": 0,
+      "IsActive": true
+    }
+  ],
+  "transactions": [
+    {
+      "Id": "377",
+      "VNo": "",
+      "Vtype": "PAYMENT",
+      "VDate": "2026-02-14T00:00:00.000Z",
+      "Debit": 1180,
+      "Credit": 0,
+      "Narration": "Supplier Debit (Payment Updated) For Invoice No.  [Deactivated by VNo Cleanup]",
+      "IsActive": 0
+    },
+    {
+      "Id": "376",
+      "VNo": "",
+      "Vtype": "PURCHASE",
+      "VDate": "2026-02-14T00:00:00.000Z",
+      "Debit": 0,
+      "Credit": 1180,
+      "Narration": "Supplier Credit (Updated) For Invoice No.  [Deactivated by VNo Cleanup]",
+      "IsActive": 0
+    },
+    {
+      "Id": "372",
+      "VNo": "20260214124343297",
+      "Vtype": "PURCHASE",
+      "VDate": "2026-02-14T00:00:00.000Z",
+      "Debit": 0,
+      "Credit": 1180,
+      "Narration": "Supplier. suplierrrr",
+      "IsActive": 1
+    }
+  ],
+  "vnoTransactions": []
+}

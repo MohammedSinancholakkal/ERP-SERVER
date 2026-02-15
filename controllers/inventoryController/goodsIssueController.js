@@ -12,7 +12,8 @@ exports.getAllGoodsIssues = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "GI.InsertDate"; // Default
     if (sortBy === "id") sortColumn = "GI.Id";

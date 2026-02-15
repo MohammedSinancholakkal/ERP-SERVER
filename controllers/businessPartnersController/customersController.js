@@ -17,7 +17,8 @@ exports.getAllCustomers = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "Name";
@@ -126,6 +127,11 @@ exports.getCustomerById = async (req, res) => {
 // =============================================================
 // ADD CUSTOMER
 // =============================================================
+const accountingService = require("../../services/accountingService");
+
+// =============================================================
+// ADD CUSTOMER
+// =============================================================
 exports.addCustomer = async (req, res) => {
   const {
     name,
@@ -153,6 +159,29 @@ exports.addCustomer = async (req, res) => {
   } = req.body;
 
   try {
+    // 1. Ensure COA Head Exists (Parent: 'Sundry Debtors' - Code '10103')
+    // NOTE: '10103' is standard, but we should find it dynamically or assume standard seed. 
+    // Ideally we look up "Sundry Debtors" first.
+    
+    // Let's assume Sundry Debtors is '10103' for now as per common practice, 
+    // OR look it up by name "Sundry Debtors" in the service helper.
+    // For specific requirement, let's lookup parent "Sundry Debtors" by code if known or name.
+    
+    // We will pass the parent Name "Sundry Debtors" or code if we know it.
+    // Let's fetch parent code for "Account Receivable" first.
+    // Let's fetch parent code for "Account Receivable" (10101)
+    const parentRes = await sql.query`SELECT HeadCode FROM Accounts WHERE HeadCode = '10101'`;
+    let parentCode = '10101'; // Fallback to Account Receivable
+    if (parentRes.recordset.length > 0) {
+        parentCode = parentRes.recordset[0].HeadCode;
+    }
+
+    const coaId = await accountingService.ensureAccountHead({
+        name: name,
+        parentCode: parentCode,
+        userId: userId
+    });
+
     const result = await sql.query`
       INSERT INTO Customers (
         Name, ContactName, ContactTitle,
@@ -165,7 +194,8 @@ exports.addCustomer = async (req, res) => {
         SalesMan, OrderBooker,
         PAN, GSTTIN,
         InsertUserId,
-        IsActive
+        IsActive,
+        COAId
       )
       OUTPUT INSERTED.Id
       VALUES (
@@ -179,7 +209,8 @@ exports.addCustomer = async (req, res) => {
         ${salesMan}, ${orderBooker},
         ${pan}, ${gstin},
         ${userId},
-        1
+        1,
+        ${coaId}
       )
     `;
 
@@ -300,7 +331,8 @@ exports.searchCustomers = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "Name";
@@ -437,4 +469,44 @@ exports.restoreCustomer = async (req, res) => {
     console.error("RESTORE CUSTOMER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+
+// =============================================================
+// GET CUSTOMER RECEIVABLES
+// =============================================================
+exports.getCustomerReceivables = async (req, res) => {
+    try {
+        // Query to get Total Debit (Receivable) and Total Credit (Received) from Transactions for each Customer's COA
+        // We join Customers with Transactions on COAId
+        
+        // Note: In our system:
+        // Debit to Customer Account = Receivable (Invoice created)
+        // Credit to Customer Account = Received (Payment made)
+        
+        const result = await sql.query`
+            SELECT 
+                C.Id AS id,
+                C.Name AS name,
+                C.Phone AS phone,
+                C.COAId,
+                ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) AS receivable,
+                ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) AS received,
+                (ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) - 
+                 ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0)) AS balance
+            FROM Customers C
+            LEFT JOIN Transactions T ON C.COAId = T.COAId
+            WHERE C.IsActive = 1
+            GROUP BY C.Id, C.Name, C.Phone, C.COAId
+            HAVING (ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) > 0 
+                 OR ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) > 0)
+            ORDER BY C.Name ASC
+        `;
+
+        res.status(200).json(result.recordset);
+
+    } catch (error) {
+        console.error("GET CUSTOMER RECEIVABLES ERROR:", error);
+        res.status(500).json({ message: "Error loading receivables report" });
+    }
 };

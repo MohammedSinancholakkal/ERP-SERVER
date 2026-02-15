@@ -16,7 +16,8 @@ exports.getAllCurrencies = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "Id";
     if (sortBy === "currencyName") sortColumn = "CurrencyName";

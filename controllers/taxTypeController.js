@@ -18,7 +18,8 @@ exports.getTaxTypes = async (req, res) => {
 
     // PAGINATED LIST
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "name" : "id";
 
     const query = `
@@ -122,7 +123,8 @@ exports.searchTaxTypes = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "name" : "id";
 
     const query = `

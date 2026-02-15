@@ -19,7 +19,8 @@ exports.getAllAttendanceStatuses = async (req, res) => {
 
     // Fetch paginated data
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `
@@ -130,7 +131,8 @@ exports.searchAttendanceStatuses = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `

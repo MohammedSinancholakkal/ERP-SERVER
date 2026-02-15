@@ -20,7 +20,8 @@ exports.getAllCities = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "c.id";
     if (sortBy === "name") sortColumn = "c.name";
@@ -164,7 +165,8 @@ exports.searchCities = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     let sortColumn = "c.id";
     if (sortBy === "name") sortColumn = "c.name";

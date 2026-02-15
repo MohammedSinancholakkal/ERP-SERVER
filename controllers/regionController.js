@@ -16,7 +16,8 @@ exports.getAllRegions = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "regionName" : "regionId";
 
     const query = `
@@ -163,7 +164,8 @@ exports.searchRegions = async (req, res) => {
   
     try {
       const sortBy = req.query.sortBy || "id";
-      const order = (req.query.order || "ASC").toUpperCase();
+      const order = (req.query.order || "DESC").toUpperCase();
+
       const sortColumn = sortBy === "name" ? "regionName" : "regionId";
 
       const request = new sql.Request();

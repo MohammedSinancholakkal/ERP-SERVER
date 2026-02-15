@@ -18,7 +18,8 @@ exports.getAllStocks = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "S.Id";
     if (sortBy === "productName") sortColumn = "P.ProductName";
@@ -393,9 +394,46 @@ exports.restoreStock = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+
     res.status(200).json({ message: "Stock restored successfully" });
   } catch (error) {
     console.error("RESTORE STOCK ERROR:", error);
     res.status(500).json({ message: "Server Error", error: error.message });
   }
+};
+
+// ================================
+// GET STOCK REPORT
+// ================================
+exports.getStockReport = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                P.Id AS id,
+                P.ProductName AS productName,
+                C.Name AS categoryName,
+                P.QuantityIn AS qtyIn,
+                P.QuantityOut AS qtyOut,
+                P.UnitsInStock AS stock,
+                P.UnitPrice AS salePrice,
+                ISNULL((
+                    SELECT TOP 1 UnitPrice 
+                    FROM PurchaseDetails PD 
+                    JOIN Purchases Pur ON PD.PurchaseId = Pur.Id 
+                    WHERE PD.ProductId = P.Id AND Pur.IsActive = 1 
+                    ORDER BY Pur.Date DESC, Pur.Id DESC
+                ), 0) AS purchasePrice
+            FROM Products P
+            LEFT JOIN Categories C ON P.CategoryId = C.Id
+            WHERE P.IsActive = 1
+            ORDER BY P.ProductName ASC
+        `;
+
+        const result = await sql.query(query);
+        res.status(200).json({ records: result.recordset });
+
+    } catch (error) {
+        console.error("GET STOCK REPORT ERROR:", error);
+        res.status(500).json({ message: "Error loading stock report", error: error.message });
+    }
 };

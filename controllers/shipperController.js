@@ -19,7 +19,8 @@ exports.getAllShippers = async (req, res) => {
 
     // Fetch records
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "CompanyName" : "Id";
 
     const query = `
@@ -151,7 +152,8 @@ exports.searchShippers = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "CompanyName" : "Id";
 
     const query = `

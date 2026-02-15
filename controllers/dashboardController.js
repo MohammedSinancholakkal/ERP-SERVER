@@ -10,7 +10,7 @@ exports.getDashboardStats = async (req, res) => {
     const currentMonth = today.getMonth() + 1;
 
     // Get local date string YYYY-MM-DD
-    const localDate = new Date().toLocaleDateString('en-CA'); 
+    const localDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0]; 
 
     // 1. TOP CARDS COUNTS
     const countsResult = await sql.query`
@@ -167,5 +167,79 @@ exports.getDashboardStats = async (req, res) => {
   } catch (error) {
     console.error("DASHBOARD STATS ERROR:", error);
     res.status(500).json({ message: "Error loading dashboard stats" });
+  }
+};
+
+// =============================================================
+// GET TODAY'S DETAILED REPORT (Sales & Purchases)
+// =============================================================
+exports.getTodaysReport = async (req, res) => {
+  try {
+    const clientDate = req.query.date; 
+    const istDate = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0];
+    console.log(`[TodaysReport] Received request. Client Date: ${clientDate}, Server Time: ${new Date().toISOString()}, IST Date: ${istDate}`);
+
+    const pool = await sql.connect();
+    let salesResult, purchaseResult;
+    
+    // Use server date logic consistent with Dashboard Stats but FORCE IST
+    // "en-CA" gives YYYY-MM-DD. We force timeZone to Asia/Kolkata.
+    // If it's 11:00 AM IST (Feb 7), it's Feb 7.
+    // If it's 2:00 AM IST (Feb 7), it's Feb 7.
+    // Even if server is UTC (which would be Feb 6 8:30 PM), we want Feb 7.
+    const serverDateIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0];
+    
+    // Only use clientDate if specifically provided and different? 
+    // Actually, user wants consistency. Let's favor serverDate for "Today's Report".
+    // Or support date filtering if needed later, but default to serverDate.
+    const dateToUse = clientDate || serverDateIST; 
+
+    if (dateToUse) {
+        // 1. SALES
+        salesResult = await pool.request()
+            .input('date', sql.NVarChar, dateToUse) 
+            .query`
+              SELECT 
+                s.Id AS id,
+                s.InvoiceNo AS invoiceNo,
+                c.Name AS customer,
+                s.Date AS date,
+                s.GrandTotal AS total
+              FROM Sales s
+              LEFT JOIN Customers c ON s.CustomerId = c.Id
+              WHERE s.IsActive = 1 AND CAST(s.Date AS DATE) = @date
+              ORDER BY s.Id DESC
+            `;
+        console.log(`[TodaysReport] Sales Found (Date: ${dateToUse}): ${salesResult.recordset.length}`);
+
+        // 2. PURCHASES
+        purchaseResult = await pool.request()
+            .input('date', sql.NVarChar, dateToUse)
+            .query`
+              SELECT 
+                p.Id AS id,
+                p.InvoiceNo AS billNo,
+                s.CompanyName AS supplier,
+                p.Date AS date,
+                p.GrandTotal AS total
+              FROM Purchases p
+              LEFT JOIN Suppliers s ON p.SupplierId = s.Id
+              WHERE p.IsActive = 1 AND CAST(p.Date AS DATE) = @date
+              ORDER BY p.Id DESC
+            `;
+         console.log(`[TodaysReport] Purchases Found (Date: ${dateToUse}): ${purchaseResult.recordset.length}`);
+
+    } else {
+        // Fallback
+    }
+
+    res.status(200).json({
+      sales: salesResult.recordset,
+      purchases: purchaseResult.recordset
+    });
+
+  } catch (error) {
+    console.error("TODAYS REPORT ERROR:", error);
+    res.status(500).json({ message: "Error loading today's report" });
   }
 };

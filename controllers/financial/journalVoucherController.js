@@ -57,6 +57,26 @@ exports.addJournalVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        // Robust Account Lookup
+        let finalAccount = account;
+        if (account) {
+            // 1. Exact Match
+            let accRes = await pool.request().query(`SELECT HeadName FROM Accounts WHERE HeadName = '${account}'`);
+            if (accRes.recordset.length > 0) {
+                finalAccount = accRes.recordset[0].HeadName;
+            } else {
+                // 2. Variations
+                const accLower = account.toLowerCase();
+                if (accLower.includes("cash") && (accLower.includes("hand") || accLower.includes("in"))) {
+                    let cashRes = await pool.request().query(`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`);
+                    if (cashRes.recordset.length > 0) finalAccount = cashRes.recordset[0].HeadName;
+                } else if (accLower.includes("bank")) {
+                    let bankRes = await pool.request().query(`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`);
+                    if (bankRes.recordset.length > 0) finalAccount = bankRes.recordset[0].HeadName;
+                }
+            }
+        }
+
         // Auto-generate VNo (Simple format JV/YYYY/MM/0001)
         const dateObj = new Date(date);
         const year = dateObj.getFullYear();
@@ -75,7 +95,10 @@ exports.addJournalVoucher = async (req, res) => {
             .input("VNo", sql.NVarChar, vNo)
             .input("VType", sql.NVarChar, vType)
             .input("Date", sql.DateTime, date)
-            .input("Account", sql.NVarChar, account)
+            .input("VType", sql.NVarChar, vType)
+            .input("Date", sql.DateTime, date)
+            .input("Account", sql.NVarChar, finalAccount)
+            .input("Debit", sql.Decimal(18, 2), debit || 0)
             .input("Debit", sql.Decimal(18, 2), debit || 0)
             .input("Credit", sql.Decimal(18, 2), credit || 0)
             .input("Remark", sql.NVarChar, remark)
@@ -107,7 +130,10 @@ exports.updateJournalVoucher = async (req, res) => {
         await pool.request()
             .input("Id", sql.Int, id)
             .input("Date", sql.DateTime, date)
-            .input("Account", sql.NVarChar, account)
+            .input("Id", sql.Int, id)
+            .input("Date", sql.DateTime, date)
+            .input("Account", sql.NVarChar, finalAccount)
+            .input("Debit", sql.Decimal(18, 2), debit || 0)
             .input("Debit", sql.Decimal(18, 2), debit || 0)
             .input("Credit", sql.Decimal(18, 2), credit || 0)
             .input("Remark", sql.NVarChar, remark)

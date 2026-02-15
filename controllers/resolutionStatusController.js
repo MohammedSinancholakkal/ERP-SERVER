@@ -18,7 +18,8 @@ exports.getAllResolutionStatuses = async (req, res) => {
     // Fetch paginated rows
     // Fetch paginated rows
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `
@@ -129,7 +130,8 @@ exports.searchResolutionStatuses = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "Name" : "Id";
 
     const query = `

@@ -6,5 +6,6 @@ const dashboardController = require("../controllers/dashboardController");
 // So this will be protected by default.
 
 router.get("/stats", dashboardController.getDashboardStats);
+router.get("/todays-detailed", dashboardController.getTodaysReport);
 
 module.exports = router;

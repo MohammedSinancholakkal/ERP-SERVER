@@ -17,7 +17,8 @@ exports.getAllSuppliers = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "CompanyName"; // Maps 'name' to 'CompanyName'
@@ -127,6 +128,11 @@ exports.getSupplierById = async (req, res) => {
 // =============================================================
 // ADD SUPPLIER
 // =============================================================
+const accountingService = require("../../services/accountingService");
+
+// =============================================================
+// ADD SUPPLIER
+// =============================================================
 exports.addSupplier = async (req, res) => {
   const {
     companyName,
@@ -153,6 +159,21 @@ exports.addSupplier = async (req, res) => {
   } = req.body;
 
   try {
+     // 1. Ensure COA Head Exists (Parent: 'Sundry Creditors' - Code '20102') 
+     // Find parent code dynamically
+    const parentRes = await sql.query`SELECT HeadCode FROM Accounts WHERE HeadCode = '50101'`;
+    let parentCode = '50101'; // Fallback to Accounts Payable
+    if (parentRes.recordset.length > 0) {
+        parentCode = parentRes.recordset[0].HeadCode;
+    }
+
+    const coaId = await accountingService.ensureAccountHead({
+        name: companyName, // Suppliers use CompanyName
+        parentCode: parentCode,
+        userId: userId
+    });
+
+
     const result = await sql.query`
       INSERT INTO Suppliers (
         CompanyName, CountryId, StateId, CityId,
@@ -160,7 +181,8 @@ exports.addSupplier = async (req, res) => {
         PostalCode, Phone, Fax, Website,
         Email, EmailAddress, PreviousCreditBalance,
         SupplierGroupId,
-        OrderBooker, PAN, GSTIN, InsertUserId
+        OrderBooker, PAN, GSTIN, InsertUserId,
+        COAId
       )
       OUTPUT INSERTED.Id
       VALUES (
@@ -169,7 +191,8 @@ exports.addSupplier = async (req, res) => {
         ${postalCode}, ${phone}, ${fax}, ${website},
         ${email}, ${emailAddress}, ${previousCreditBalance},
         ${supplierGroupId},
-        ${orderBooker}, ${pan || null}, ${gstin || null}, ${userId}
+        ${orderBooker}, ${pan || null}, ${gstin || null}, ${userId},
+        ${coaId}
       )
     `;
 
@@ -288,7 +311,8 @@ exports.searchSuppliers = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "CompanyName";
@@ -413,5 +437,45 @@ exports.restoreSupplier = async (req, res) => {
     console.error("RESTORE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
+};
+
+
+// =============================================================
+// GET SUPPLIER PAYABLES
+// =============================================================
+exports.getSupplierPayables = async (req, res) => {
+    try {
+        // Query to get Total Credit (Payable) and Total Debit (Paid) from Transactions for each Supplier's COA
+        // We join Suppliers with Transactions on COAId
+        
+        // Note: For Suppliers (Liability):
+        // Credit to Supplier Account = Payable (Bill/Invoice Received)
+        // Debit to Supplier Account = Paid (Payment made)
+        
+        const result = await sql.query`
+            SELECT 
+                S.Id AS id,
+                S.CompanyName AS companyName,
+                S.Phone AS phone,
+                S.COAId,
+                ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) AS payable,
+                ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) AS paid,
+                (ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) - 
+                 ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0)) AS balance
+            FROM Suppliers S
+            LEFT JOIN Transactions T ON S.COAId = T.COAId
+            WHERE S.IsActive = 1
+            GROUP BY S.Id, S.CompanyName, S.Phone, S.COAId
+            HAVING (ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) > 0 
+                 OR ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) > 0)
+            ORDER BY S.CompanyName ASC
+        `;
+
+        res.status(200).json(result.recordset);
+
+    } catch (error) {
+        console.error("GET SUPPLIER PAYABLES ERROR:", error);
+        res.status(500).json({ message: "Error loading payables report" });
+    }
 };
  

@@ -19,7 +19,8 @@ exports.getAllCustomerGroups = async (req, res) => {
 
     // Fetch paginated rows
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "GroupName" : "Id";
     
     const query = `

@@ -4,6 +4,7 @@ const ctrl = require("../controllers/inventoryController/stocksController");
 
 // GET ALL (active list)
 router.get("/all", ctrl.getAllStocks);
+router.get("/report", ctrl.getStockReport);
 
 // ADD
 router.post("/add", ctrl.addStock);

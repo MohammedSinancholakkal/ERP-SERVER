@@ -9,38 +9,109 @@ exports.getAllCreditVouchers = async (req, res) => {
     const search = req.query.search || '';
     const pool = await sql.connect();
 
-    let query = `
+    // Base query for CreditVouchers (CV)
+    // Add explicitly 0 AS Debit and Amount AS Credit to match Transaction structure
+    let cvQuery = `
       SELECT 
-        Id AS id,
-        VNo AS vno,
-        VType AS vtype,
-        Date AS date,
-        DebitAccountHead AS debitAccountHead,
-        Account AS account,
-        Amount AS amount,
-        Remark AS remark,
-        IsActive AS isActive
+        Id,
+        VNo,
+        VType,
+        Date,
+        DebitAccountHead,
+        Account,
+        0 AS Debit,
+        Amount AS Credit,
+        Remark,
+        IsActive
       FROM CreditVouchers
       WHERE 1=1
     `;
 
     if (!showInactive) {
-        query += ` AND IsActive = 1`;
+        cvQuery += ` AND IsActive = 1`;
     }
 
     if (search) {
-        query += ` AND (
+        cvQuery += ` AND (
             VNo LIKE '%${search}%' OR 
+            VType LIKE '%${search}%' OR 
             DebitAccountHead LIKE '%${search}%' OR 
             Account LIKE '%${search}%' OR 
-            Remark LIKE '%${search}%' OR 
-            CAST(Amount AS NVARCHAR) LIKE '%${search}%'
+            Remark LIKE '%${search}%'
         )`;
     }
 
-    query += ` ORDER BY Date DESC, Id DESC`;
+    // Secondary query for Transactions (INV)
+    // Including:
+    // 1. Customer credit for Paid Amount (Receipt)
+    // 2. Customer debit For Invoice No. (Sale)
+    // 3. Sale Income For Invoice No. (Sale Credit)
+    let transQuery = `
+      SELECT
+        t.Id,
+        t.VNo,
+        t.VType,
+        t.VDate AS Date,
+        t.COA AS DebitAccountHead,
+        a.HeadName AS Account,
+        t.Debit,
+        t.Credit,
+        t.Narration AS Remark,
+        t.IsActive
+      FROM Transactions t
+      LEFT JOIN Accounts a ON t.COAId = a.Id
+      WHERE t.VType = 'INV' 
+      AND (
+          t.Narration LIKE 'Customer credit for Paid Amount%' OR
+          t.Narration LIKE 'Customer debit For Invoice No.%' OR
+          t.Narration LIKE 'Sale Income For Invoice No.%' OR
+          t.Narration LIKE 'Output Tax For Invoice No.%' OR
+          t.Narration LIKE '%in Sale for Invoice No.%'
+      )
+    `;
 
-    const result = await pool.request().query(query);
+    if (!showInactive) {
+        transQuery += ` AND t.IsActive = 1`;
+    }
+
+    if (search) {
+        transQuery += ` AND (
+            t.VNo LIKE '%${search}%' OR 
+            t.COA LIKE '%${search}%' OR 
+            a.HeadName LIKE '%${search}%' OR 
+            t.Narration LIKE '%${search}%'
+        )`;
+    }
+
+    // Combine with UNION ALL
+    let orderBy = 'ORDER BY Date DESC, Id DESC';
+    if (req.query.sortBy && req.query.order) {
+        const sortMap = {
+            'id': 'Id',
+            'voucherNo': 'VNo',
+            'voucherType': 'VType',
+            'voucherDate': 'Date',
+            'coaHeadName': 'Account',
+            'coa': 'DebitAccountHead',
+            'narration': 'Remark',
+            'debit': 'Debit', 
+            'credit': 'Credit'
+        };
+        const sortCol = sortMap[req.query.sortBy] || 'Date';
+        const sortDir = req.query.order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        orderBy = `ORDER BY ${sortCol} ${sortDir}`;
+    }
+
+    const finalQuery = `
+      SELECT * FROM (
+          ${cvQuery}
+          UNION ALL
+          ${transQuery}
+      ) AS Unified
+      ${orderBy}
+    `;
+
+    const result = await pool.request().query(finalQuery);
     res.status(200).json(result.recordset);
   } catch (error) {
     console.error("GET CREDIT VOUCHERS ERROR:", error);
@@ -56,26 +127,49 @@ exports.addCreditVoucher = async (req, res) => {
     
     try {
         const pool = await sql.connect();
+
+        // Robust Lookup for DebitAccountHead (Receiver - Cash/Bank)
+        let finalDebitHead = debitAccountHead;
+        if (debitAccountHead) {
+            // 1. Exact Match
+            let accRes = await pool.request().query(`SELECT HeadName FROM Accounts WHERE HeadName = '${debitAccountHead}'`);
+            if (accRes.recordset.length > 0) {
+                finalDebitHead = accRes.recordset[0].HeadName;
+            } else {
+                // 2. Variations
+                const paLower = debitAccountHead.toLowerCase();
+                if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
+                    let cashRes = await pool.request().query(`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`);
+                    if (cashRes.recordset.length > 0) finalDebitHead = cashRes.recordset[0].HeadName;
+                } else if (paLower.includes("bank")) {
+                    let bankRes = await pool.request().query(`SELECT TOP 1 HeadName FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`);
+                    if (bankRes.recordset.length > 0) finalDebitHead = bankRes.recordset[0].HeadName;
+                }
+            }
+        }
         
-        // Auto-generate VNo (Simple format CV/YYYY/MM/0001)
-        const dateObj = new Date(date);
-        const year = dateObj.getFullYear();
-        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-        const prefix = `CV/${year}/${month}/`;
+        // Auto-generate VNo (Timestamp format YYYYMMDDHHmmssSSS) matching Transaction style
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const hh = String(now.getHours()).padStart(2, '0');
+        const min = String(now.getMinutes()).padStart(2, '0');
+        const ss = String(now.getSeconds()).padStart(2, '0');
+        const ms = String(now.getMilliseconds()).padStart(3, '0');
         
-        const countRes = await pool.request().query`
-            SELECT COUNT(*) as count FROM CreditVouchers 
-            WHERE VNo LIKE ${prefix + '%'}
-        `;
-        const nextNum = (countRes.recordset[0].count + 1).toString().padStart(4, '0');
-        const vNo = `${prefix}${nextNum}`;
-        const vType = "Credit Voucher";
+        // Final VNo: YYYYMMDDHHmmssSSS
+        const vNo = `${yyyy}${mm}${dd}${hh}${min}${ss}${ms}`;
+        const vType = "CV"; // Short code style like INV/PURCHASE
 
         await pool.request()
             .input("VNo", sql.NVarChar, vNo)
             .input("VType", sql.NVarChar, vType)
             .input("Date", sql.DateTime, date)
-            .input("DebitAccountHead", sql.NVarChar, debitAccountHead)
+            .input("VType", sql.NVarChar, vType)
+            .input("Date", sql.DateTime, date)
+            .input("DebitAccountHead", sql.NVarChar, finalDebitHead)
+            .input("Account", sql.NVarChar, account)
             .input("Account", sql.NVarChar, account)
             .input("Amount", sql.Decimal(18, 2), amount)
             .input("Remark", sql.NVarChar, remark)

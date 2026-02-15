@@ -16,6 +16,9 @@ router.get("/search", checkPermission(PERMISSIONS.SALES.VIEW), salesController.s
 // List (paginated)
 router.get("/", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getAllSales);
 
+// Product-wise Report
+router.get("/product-wise-report", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getProductWiseSalesReport);
+
 // Inactive
 router.get("/inactive", checkPermission(PERMISSIONS.SALES.VIEW), salesController.getInactiveSales);
 

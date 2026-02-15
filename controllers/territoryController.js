@@ -19,7 +19,8 @@ exports.getAllTerritories = async (req, res) => {
 
     // Fetch paginated data
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     
     let sortColumn = "t.id";
     if (sortBy === "name") sortColumn = "t.territoryDescription";
@@ -157,7 +158,8 @@ exports.searchTerritories = async (req, res) => {
   
     try {
       const sortBy = req.query.sortBy || "id";
-      const order = (req.query.order || "ASC").toUpperCase();
+      const order = (req.query.order || "DESC").toUpperCase();
+
       
       let sortColumn = "t.id";
       if (sortBy === "name") sortColumn = "t.territoryDescription";

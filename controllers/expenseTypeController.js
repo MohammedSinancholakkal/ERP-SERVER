@@ -16,7 +16,8 @@ exports.getAllExpenseTypes = async (req, res) => {
     `;  
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "typeName" : "typeId";
 
     const query = `
@@ -151,7 +152,8 @@ exports.searchExpenseTypes = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "name" ? "typeName" : "typeId";
 
     const query = `

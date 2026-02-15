@@ -171,7 +171,8 @@ exports.getAllStates = async (req, res) => {
     `;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const allowedSort = ["id", "name", "countryName"];
     const sortColumn = allowedSort.includes(sortBy) ? (sortBy === "countryName" ? "c.name" : `s.${sortBy}`) : "s.id";
 
@@ -322,7 +323,8 @@ exports.searchStates = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
     const sortColumn = sortBy === "countryName" ? "c.name" : (sortBy === "name" ? "s.name" : "s.id");
 
     const query = `

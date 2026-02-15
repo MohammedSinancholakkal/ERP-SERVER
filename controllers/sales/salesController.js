@@ -1,4 +1,6 @@
 const sql = require("../../db/dbConfig");
+const { generateVNo } = require("../../utils/vnoUtils");
+const accountingService = require("../../services/accountingService");
 
 
 
@@ -9,7 +11,8 @@ exports.getAllSales = async (req, res) => {
     const offset = (page - 1) * limit;
 
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "ASC").toUpperCase();
+    const order = (req.query.order || "DESC").toUpperCase();
+
 
     // Map frontend keys to backend columns
     let sortColumn = "InsertDate"; // Default sort
@@ -25,7 +28,16 @@ exports.getAllSales = async (req, res) => {
         case "due": sortColumn = "S.Due"; break;
         case "paymentAccount": sortColumn = "S.PaymentAccount"; break;
         case "vehicleNo": sortColumn = "S.VehicleNo"; break;
-        case "invoiceNo": sortColumn = "S.InvoiceNo"; break; // or VNo?
+        case "invoiceNo": sortColumn = "S.InvoiceNo"; break;
+        case "discount": sortColumn = "S.Discount"; break;
+        case "totalDiscount": sortColumn = "S.TotalDiscount"; break;
+        case "totalTax": sortColumn = "S.TotalTax"; break;
+        case "igstRate": sortColumn = "S.IGSTRate"; break;
+        case "cgstRate": sortColumn = "S.CGSTRate"; break;
+        case "sgstRate": sortColumn = "S.SGSTRate"; break;
+        case "shippingCost": sortColumn = "S.ShippingCost"; break;
+        case "change": sortColumn = "S.Change"; break;
+        case "details": sortColumn = "S.Details"; break;
         default: sortColumn = "S.InsertDate"; // Default
     }
 
@@ -63,7 +75,19 @@ exports.getAllSales = async (req, res) => {
         S.SGSTRate AS sgstRate,
         S.ShippingCost AS shippingCost,
         S.Change AS change,
-        S.Details AS details
+        S.Change AS change,
+        S.Details AS details,
+        (
+            SELECT 
+                sd.ProductName AS productName, 
+                sd.Quantity AS quantity, 
+                sd.UnitPrice AS unitPrice, 
+                sd.Total AS total, 
+                sd.Discount AS discount 
+            FROM SaleDetails sd 
+            WHERE sd.SaleId = S.Id 
+            FOR JSON PATH
+        ) AS items
       FROM Sales S
       LEFT JOIN Customers C ON S.CustomerId = C.Id
       WHERE S.IsActive = 1
@@ -195,8 +219,10 @@ exports.addSale = async (req, res) => {
     change,
     paymentAccount,
     details,
-    vno,
+
+    // vno, // Generated server side
     vehicleNo,
+
     items,   // SaleDetails array
     userId,
     invoiceNo, // NEW: Invoice No
@@ -205,6 +231,9 @@ exports.addSale = async (req, res) => {
     sgstRate,
     igstRate
   } = req.body;
+
+  const now = new Date();
+  const vno = generateVNo(now);
 
   const transaction = new sql.Transaction();
 
@@ -247,7 +276,8 @@ exports.addSale = async (req, res) => {
         ShippingCost, GrandTotal, NetTotal,
         PaidAmount, Due, Change, PaymentAccount,
         Details, VNo, VehicleNo, InsertUserId,
-        TaxTypeId, CGSTRate, SGSTRate, IGSTRate, InvoiceNo
+        TaxTypeId, CGSTRate, SGSTRate, IGSTRate, InvoiceNo,
+        InsertDate
       )
       OUTPUT INSERTED.Id
       VALUES (
@@ -257,7 +287,8 @@ exports.addSale = async (req, res) => {
         ${shippingCost}, ${grandTotal}, ${netTotal},
         ${paidAmount}, ${due}, ${change}, ${paymentAccount},
         ${details}, ${vno}, ${vehicleNo}, ${userId},
-        ${safeTaxTypeId}, ${safeCgstRate}, ${safeSgstRate}, ${safeIgstRate}, ${invoiceNo}
+        ${safeTaxTypeId}, ${safeCgstRate}, ${safeSgstRate}, ${safeIgstRate}, ${invoiceNo},
+        ${now}
       )
     `;
 
@@ -294,6 +325,265 @@ exports.addSale = async (req, res) => {
                   WHERE Id = ${item.productId}
               `;
           }
+    }
+
+    // 📢 ACCOUNTING POSTING (CONSOLIDATED 5-ENTRY PATTERN)
+    try {
+        const accountingService = require("../../services/accountingService");
+
+        // 1. Get Customer details
+        const custRes = await new sql.Request(transaction).query`SELECT COAId, Name, Phone FROM Customers WHERE Id = ${customerId}`;
+        const customerCOAId = custRes.recordset[0]?.COAId;
+        const customerName = custRes.recordset[0]?.Name;
+        
+        // Fetch Customer HeadCode
+        let customerHeadCode;
+        if(customerCOAId) {
+             const chemRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${customerCOAId}`;
+             customerHeadCode = chemRes.recordset[0]?.HeadCode;
+        }
+
+        if (customerCOAId) {
+             // ---------------------------------------------------------
+             // LOOKUP ALL REQUIRED ACCOUNT HEADS
+             // ---------------------------------------------------------
+             
+             // A. SALES ACCOUNT
+             let salesRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales Account'`;
+             let salesCOAId = salesRes.recordset[0]?.Id;
+             let salesHeadCode = salesRes.recordset[0]?.HeadCode;
+             
+             if(!salesCOAId) {
+                 salesRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales'`;
+                 salesCOAId = salesRes.recordset[0]?.Id;
+                 salesHeadCode = salesRes.recordset[0]?.HeadCode;
+             }
+
+             // B. TAX ACCOUNT
+             let taxCOAId;
+             let taxHeadCode;
+             if (safeTaxTypeId || totalTax > 0) {
+                 const taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Output Tax'`;
+                 taxCOAId = taxRes.recordset[0]?.Id;
+                 taxHeadCode = taxRes.recordset[0]?.HeadCode;
+
+                 if(!taxCOAId) {
+                      const taxRes2 = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Duties & Taxes'`;
+                      taxCOAId = taxRes2.recordset[0]?.Id;
+                      taxHeadCode = taxRes2.recordset[0]?.HeadCode;
+                 }
+             }
+
+             // C. COGS & INVENTORY ACCOUNTS
+             let cogsId, inventoryId;
+             let inventoryHeadCode;
+             let totalCost = 0;
+             
+             // Calculate Total Cost using Last Purchase Price (FIFO/LIFO proxy) - EXCLUSIVE OF TAX
+             for (const item of items) {
+                 if (item.productId) {
+                     // Look up LAST Purchase Price from Purchase History
+                     const productRes = await new sql.Request(transaction).query`
+                        SELECT TOP 1 pd.UnitPrice 
+                        FROM PurchaseDetails pd
+                        INNER JOIN Purchases p ON pd.PurchaseId = p.Id
+                        WHERE pd.ProductId = ${item.productId} AND pd.IsActive = 1
+                        ORDER BY p.Date DESC, p.Id DESC
+                     `;
+                     
+                     const lastPurchasePrice = productRes.recordset[0]?.UnitPrice || 0;
+                     
+                     // Use Last Purchase Price preferably, fallback to frontend provided 'purchasePrice' (if any), else 0
+                     const costPrice = Number(lastPurchasePrice) || Number(item.purchasePrice || 0);
+                     totalCost += (costPrice * Number(item.quantity || 0));
+                 }
+             }
+
+             if (totalCost > 0) {
+                 let cogsRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Cost of Goods Sold'`;
+                 cogsId = cogsRes.recordset[0]?.Id;
+                 const cogsHeadCode = cogsRes.recordset[0]?.HeadCode;
+                 
+                 let inventoryRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Inventory'`;
+                 inventoryId = inventoryRes.recordset[0]?.Id;
+                 inventoryHeadCode = inventoryRes.recordset[0]?.HeadCode;
+
+                 if(!inventoryId) {
+                     // Fallback
+                     let stockRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Stock In Hand'`;
+                     inventoryId = stockRes.recordset[0]?.Id;
+                     inventoryHeadCode = stockRes.recordset[0]?.HeadCode;
+                 }
+
+                 // Store COGS HeadCode in scope if needed or attach to object
+                 // Better to store it in a way we can access later. 
+                 // Let's attach to the cogsId variable or just use a new var.
+                 // Actually, let's just push the COGS entry HERE or save the code.
+                 // Javascript scoping: vars declared with 'let' inside block aren't available outside? 
+                 // Wait, cogsId and inventoryId are declared outside (lines 378).
+                 // cogsHeadCode is new.
+                 // Let's assign it to a variable defined in valid scope or just use it in the entries construction later?
+                 // Current structure defines masterEntries later.
+                 // I will define 'cogsHeadCode' outside.
+             }
+
+             // D. BANK / CASH ACCOUNT (For Receipt)
+             let bankCOAId;
+             let bankHeadCode;
+             if (paidAmount > 0) {
+                 if (paymentAccount) {
+                      // Try Exact Match
+                      let bankRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = ${paymentAccount}`;
+                      
+                      if (bankRes.recordset.length === 0) {
+                            // Try Variations
+                            const paLower = paymentAccount.toLowerCase();
+                            if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
+                                 bankRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`;
+                            } else if (paLower.includes("bank")) {
+                                 bankRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`;
+                            }
+                      }
+
+                      bankCOAId = bankRes.recordset[0]?.Id;
+                      bankHeadCode = bankRes.recordset[0]?.HeadCode;
+                 }
+                 
+                 // Fallback
+                 if (!bankCOAId) {
+                      const cashRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Cash In Hand' OR HeadName = 'Cash At Hand'`;
+                      bankCOAId = cashRes.recordset[0]?.Id;
+                      bankHeadCode = cashRes.recordset[0]?.HeadCode;
+                 }
+             }
+
+             // ---------------------------------------------------------
+             // BUILD ENTRIES ARRAY
+             // ---------------------------------------------------------
+             const masterEntries = [];
+
+             // 1. INVENTORY CREDIT (Asset Decrease) - AT COST
+             // Narration: "Inventory credit For Invoice No. 6"
+             if (inventoryId && totalCost > 0) {
+                 masterEntries.push({ 
+                     coaId: inventoryId, 
+                     headCode: inventoryHeadCode,
+                     debit: 0, 
+                     credit: totalCost, 
+                     narration: `Inventory credit For Invoice No. ${invoiceNo || vno}` 
+                 });
+             }
+
+             // 2. CUSTOMER DEBIT (Receivable Increase - Full Invoice Amount)
+             // Narration: "Customer debit For Invoice No. 6 Customer: Name"
+             // NOTE: Usually we debit the Grand Total.
+             masterEntries.push({ 
+                 coaId: customerCOAId, 
+                 headCode: customerHeadCode,
+                 debit: grandTotal, 
+                 credit: 0, 
+                 narration: `Customer debit For Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
+             });
+
+             // 3. SALES CREDIT (Revenue Increase)
+             // Narration: "Sale Income For Invoice No. 6 Customer: Name"
+             if (salesCOAId) {
+                 masterEntries.push({ 
+                     coaId: salesCOAId, 
+                     headCode: salesHeadCode, // Now defined
+                     debit: 0, 
+                     credit: netTotal, 
+                     narration: `Sale Income For Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
+                 });
+             }
+             
+             // 3a. TAX CREDIT (Liability Increase)
+             if (totalTax > 0 && taxCOAId) {
+                masterEntries.push({ 
+                    coaId: taxCOAId, 
+                    headCode: taxHeadCode,
+                    debit: 0, 
+                    credit: totalTax, 
+                    narration: `Output Tax For Invoice No. ${invoiceNo || vno}` 
+                });
+             }
+
+             // 3b. COGS DEBIT (Expense Increase)
+             if (cogsId && totalCost > 0) {
+                 // Fetch HeadCode again if not stored, or rely on service to fetch it?
+                 // Service fetches if missing. But let's try to pass it if we have it. 
+                 // I will use a simple query here? No, better to have fetched it earlier.
+                 // In Chunk 1, I tried to fetch it. But I need to declare the variable in outer scope.
+                 // Let's rely on accountingService to fetch HeadCode if I pass just ID?
+                 // accountingService: "if(!headCode) ... SELECT HeadCode" (Line 102).
+                 // So I don't STRICTLY need to pass HeadCode if I pass coaId.
+                 // BUT, I'd prefer to fetch it.
+                 
+                 masterEntries.push({ 
+                     coaId: cogsId,
+                     // headCode: ??? (Service will fetch)
+                     debit: totalCost, 
+                     credit: 0, 
+                     narration: `Cost of Goods Sold For Invoice No. ${invoiceNo || vno}` 
+                 });
+             }
+             /*
+             if (cogsId && totalCost > 0) {
+                 masterEntries.push({ 
+                     coaId: cogsId, 
+                     debit: totalCost, 
+                     credit: 0, 
+                     narration: `Cost of Sales For Invoice No. ${invoiceNo}` 
+                 });
+             }
+             */
+
+             // 4. CASH/BANK DEBIT (Payment Received) - ENTRY #4 (As per user request order)
+             // Narration: "Cash At Bank in Sale for Invoice No. 6 Customer: Name"
+             if (paidAmount > 0 && bankCOAId) {
+                 // Use "Cash At Bank" or similar text in narration regardless of account name to match pattern?
+                 // Or use dynamic Account Name but keep "in Sale for..."
+                 // User image says: "Cash At Bank in Sale for Invoice No. 7 Customer: test new customer"
+                 // Or "Cash at Bank in Sale for Invoice No. INV-00022..."
+                 
+                 masterEntries.push({ 
+                     coaId: bankCOAId, 
+                     headCode: bankHeadCode,
+                     debit: paidAmount, 
+                     credit: 0, 
+                     narration: `${paymentAccount || 'Cash'} in Sale for Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
+                 });
+
+                 // 5. CUSTOMER CREDIT (Receivable Decrease) - ENTRY #5 (As per user request order)
+                 // Narration: "Customer credit for Paid Amount For Invoice No. 6 Customer: Name"
+                 masterEntries.push({ 
+                     coaId: customerCOAId, 
+                     headCode: customerHeadCode,
+                     debit: 0, 
+                     credit: paidAmount, 
+                     narration: `Customer credit for Paid Amount For Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
+                 });
+             }
+
+             // ---------------------------------------------------------
+             // RECORD SINGLE TRANSACTION
+             // ---------------------------------------------------------
+                 if (masterEntries.length >= 2) {
+                 await accountingService.recordTransaction({
+                     vNo: vno, // Or use invoiceNo if preferred
+                     vType: 'INV', // Changed from SALES/RECEIPT to 'INV' to match screenshot
+                     date: date,
+                     entries: masterEntries,
+                     userId: userId,
+                     transaction: transaction,
+                     insertDate: now
+                 });
+             }
+        }
+
+    } catch (err) {
+        console.error("Accounting Posting Error:", err);
+        throw err;
     }
 
     await transaction.commit();
@@ -337,10 +627,49 @@ exports.updateSale = async (req, res) => {
     userId
   } = req.body;
 
+  const safeNumbers = {
+    discount: Number(discount) || 0,
+    totalDiscount: Number(totalDiscount) || 0,
+    shippingCost: Number(shippingCost) || 0,
+    grandTotal: Number(grandTotal) || 0,
+    netTotal: Number(netTotal) || 0,
+    paidAmount: Number(paidAmount) || 0,
+    due: Number(due) || 0,
+    change: Number(change) || 0,
+    totalTax: Number(totalTax) || 0
+  };
+
   const transaction = new sql.Transaction();
+
+  // 🛡️ VNo Handling & InvoiceNo Fetching
+  let finalVNo = vno; // From request body
+  let oldVNo = null;  // To store VNo BEFORE update
+  let dbInvoiceNo = null; // To store InvoiceNo from DB
+
+  // Fetch current VNo and InvoiceNo from DB (Outside transaction or before BEGIN? Better inside to be safe but we need it for variables scope)
+  // Actually, we can fetch it before transaction provided we don't need lock yet.
+  // Or purely inside. Let's initialize variables here and fetch inside.
 
   try {
     await transaction.begin();
+
+    // FETCH EXISTING DATA
+    try {
+        const currentRes = await new sql.Request(transaction).query`SELECT VNo, InvoiceNo FROM Sales WHERE Id = ${id}`;
+        if (currentRes.recordset.length > 0) {
+            oldVNo = currentRes.recordset[0].VNo;
+            dbInvoiceNo = currentRes.recordset[0].InvoiceNo;
+        }
+
+        // Logic to handle empty VNo
+        if (!finalVNo || finalVNo.trim() === '') {
+            finalVNo = oldVNo;
+            if (!finalVNo || finalVNo.trim() === '') {
+                const { generateVNo } = require("../../utils/vnoUtils");
+                finalVNo = generateVNo(new Date());
+            }
+        }
+    } catch (e) { console.error("Error fetching old VNo", e); }
 
     // 1. REVERT OLD STOCK (INCREASE)
     const oldItemsReq = new sql.Request(transaction);
@@ -391,21 +720,21 @@ exports.updateSale = async (req, res) => {
       SET
         CustomerId = ${customerId}, 
         Date = ${date},
-        Discount = ${discount},
-        TotalDiscount = ${totalDiscount},
+        Discount = ${safeNumbers.discount},
+        TotalDiscount = ${safeNumbers.totalDiscount},
 
-        TotalTax = ${totalTax},
+        TotalTax = ${safeNumbers.totalTax},
         NoTax = ${noTax || 0},
-        ShippingCost = ${shippingCost},
+        ShippingCost = ${safeNumbers.shippingCost},
 
-        GrandTotal = ${grandTotal},
-        NetTotal = ${netTotal},
-        PaidAmount = ${paidAmount},
-        Due = ${due},
-        Change = ${change},
+        GrandTotal = ${safeNumbers.grandTotal},
+        NetTotal = ${safeNumbers.netTotal},
+        PaidAmount = ${safeNumbers.paidAmount},
+        Due = ${safeNumbers.due},
+        Change = ${safeNumbers.change},
         PaymentAccount = ${paymentAccount},
         Details = ${details},
-        VNo = ${vno},
+        VNo = ${finalVNo},
         VehicleNo = ${vehicleNo},
         TaxTypeId = ${req.body.taxTypeId},
         CGSTRate = ${req.body.cgstRate},
@@ -467,6 +796,183 @@ exports.updateSale = async (req, res) => {
               WHERE Id = ${item.productId}
           `;
       }
+    }
+
+    // ==============================================================================================
+    // 📢 ACCOUNTING UPDATE (DELETE OLD + RE-INSERT NEW)
+    // ==============================================================================================
+    try {
+        // 1. Delete Old Transactions
+        // 1. Delete Old Transactions
+        const delTrans = new sql.Request(transaction);
+        // Delete both SALES and RECEIPT entries for this Voucher to avoid duplicates
+        // USE oldVNo to delete what was there before! If oldVNo was null, try finalVNo.
+        const vnoToDelete = oldVNo || finalVNo;
+        await delTrans.query`DELETE FROM Transactions WHERE VNo = ${vnoToDelete} AND (Vtype = 'SALES' OR Vtype = 'RECEIPT' OR Vtype = 'INV')`;
+        // Also delete 'INV' type (used in AddSale) 
+
+
+        // Ensure date is valid for SQL
+        const txnDate = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
+        // 2. Re-calculate and Insert New Transactions
+        // Fetch Customer COA/Name
+        const custRes = await new sql.Request(transaction).query`SELECT COAId, Name FROM Customers WHERE Id = ${customerId}`;
+        const customerCOAId = custRes.recordset[0]?.COAId;
+        const customerName = custRes.recordset[0]?.Name;
+    
+        if (customerCOAId) {
+             // Customer Head Code
+             const headRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${customerCOAId}`;
+             const customerHeadCode = headRes.recordset[0]?.HeadCode;
+
+             // Find Sales Account
+             let salesRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales Account'`;
+             let salesCOAId = salesRes.recordset[0]?.Id;
+             let salesHeadCode = salesRes.recordset[0]?.HeadCode;
+             if(!salesCOAId) {
+                  salesRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales'`;
+                  salesCOAId = salesRes.recordset[0]?.Id;
+                  salesHeadCode = salesRes.recordset[0]?.HeadCode;
+             }
+             
+             // Find Tax Account
+             let taxCOAId, taxHeadCode;
+             if (Number(totalTax) > 0) {
+                 const taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Output Tax'`;
+                 taxCOAId = taxRes.recordset[0]?.Id;
+                 taxHeadCode = taxRes.recordset[0]?.HeadCode;
+                 if(!taxCOAId) {
+                      const taxRes2 = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Duties & Taxes'`;
+                      taxCOAId = taxRes2.recordset[0]?.Id;
+                      taxHeadCode = taxRes2.recordset[0]?.HeadCode;
+                 }
+             }
+
+             // Find Shipping Account
+             let shipCOAId, shipHeadCode;
+             if (Number(shippingCost) > 0) {
+                 const shipRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Shipping Income'`; // Or Expense? Usually Income for Sales
+                 shipCOAId = shipRes.recordset[0]?.Id;
+                 shipHeadCode = shipRes.recordset[0]?.HeadCode;
+             }
+
+             // Find Bank/Cash Account
+             let bankCOAId, bankHeadCode;
+             if (paymentAccount) {
+                 let bankRes;
+                 // Check if paymentAccount is numeric (ID) or string (Name)
+                 if (isNaN(paymentAccount)) {
+                     // It's a name like 'Cash at Bank' or 'Cash at Hand'
+                     bankRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = ${paymentAccount}`;
+                     if (bankRes.recordset.length > 0) {
+                         bankCOAId = bankRes.recordset[0].Id; // Use the fetched ID
+                         bankHeadCode = bankRes.recordset[0].HeadCode;
+                     }
+                 } else {
+                     // It's an ID
+                     bankRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${paymentAccount}`;
+                     if (bankRes.recordset.length > 0) {
+                         bankCOAId = paymentAccount;
+                         bankHeadCode = bankRes.recordset[0].HeadCode;
+                     }
+                 }
+             }
+
+
+             // A. MAIN SALES ENTRY
+             const masterEntries = [];
+             
+             // Debit Customer (Grand Total)
+             masterEntries.push({
+                 coaId: customerCOAId,
+                 headCode: customerHeadCode,
+                 debit: safeNumbers.grandTotal,
+                 credit: 0,
+                 narration: `Customer Debit (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+             });
+             
+             // Credit Sales (Net Total)
+             if (salesCOAId) {
+                 masterEntries.push({
+                     coaId: salesCOAId,
+                     headCode: salesHeadCode,
+                     debit: 0,
+                     credit: safeNumbers.netTotal, // Net without tax
+                     narration: `Sales Credit (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+                 });
+             }
+             
+             // Credit Tax
+             if (taxCOAId && safeNumbers.totalTax > 0) {
+                 masterEntries.push({
+                     coaId: taxCOAId,
+                     headCode: taxHeadCode,
+                     debit: 0,
+                     credit: safeNumbers.totalTax,
+                     narration: `Tax Credit (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+                 });
+             }
+
+             // Credit Shipping
+             if (shipCOAId && safeNumbers.shippingCost > 0) {
+                 masterEntries.push({
+                     coaId: shipCOAId,
+                     headCode: shipHeadCode,
+                     debit: 0,
+                     credit: safeNumbers.shippingCost,
+                     narration: `Shipping Credit (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+                 });
+             }
+             
+             await accountingService.recordTransaction({
+                 vNo: finalVNo,
+                 vType: 'SALES',
+                 date: txnDate,
+                 entries: masterEntries,
+                 userId: userId,
+                 transaction: transaction // Pass transaction!
+             });
+
+
+             // B. PAYMENT ENTRY (Receipt)
+             if (Number(safeNumbers.paidAmount) > 0 && bankCOAId) {
+                 const paymentEntries = [];
+                 
+                 // Debit Bank/Cash
+                 paymentEntries.push({
+                     coaId: bankCOAId,
+                     headCode: bankHeadCode,
+                     debit: safeNumbers.paidAmount,
+                     credit: 0,
+                     narration: `Receipt (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+                 });
+                 
+                 // Credit Customer
+                 paymentEntries.push({
+                     coaId: customerCOAId,
+                     headCode: customerHeadCode,
+                     debit: 0,
+                     credit: safeNumbers.paidAmount,
+                     narration: `Customer Credit (Updated) For Invoice No. ${dbInvoiceNo || finalVNo}`
+                 });
+                 
+                 await accountingService.recordTransaction({
+                     vNo: finalVNo, // Or new VNo? Usually same VNo for related transactions or separate. Keeping same for link.
+                     vType: 'RECEIPT', // or SALES RECEIPT
+                     date: txnDate,
+                     entries: paymentEntries,
+                     userId: userId,
+                     transaction: transaction
+                 });
+             }
+
+        }
+
+
+    } catch (accErr) {
+        console.error("ACCOUNTING UPDATE ERROR:", accErr);
+        throw new Error("Failed to update accounting entries: " + accErr.message);
     }
 
     await transaction.commit();
@@ -691,6 +1197,45 @@ exports.searchSale = async (req, res) => {
     });
   } catch (error) {
     console.error("SEARCH SALE ERROR:", error);
-    res.status(500).json({ message: "Search failed" });
+    res.status(200).json({ message: "Search failed" });
+  }
+};
+
+// =============================================================
+// PRODUCT WISE SALES REPORT
+// =============================================================
+exports.getProductWiseSalesReport = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+
+    let dateFilter = "";
+    if (startDate && endDate) {
+        dateFilter = ` AND s.Date BETWEEN '${startDate}' AND '${endDate}' `;
+    }
+
+    const query = `
+      SELECT
+        s.Date AS date,
+        sd.ProductName AS productName,
+        s.InvoiceNo AS invoiceNo,
+        s.VNo AS vno,
+        c.Name AS customerName,
+        sd.UnitPrice AS rate,
+        sd.Quantity AS quantity,
+        sd.Discount AS discount,
+        sd.Total AS total
+      FROM SaleDetails sd
+      INNER JOIN Sales s ON sd.SaleId = s.Id
+      LEFT JOIN Customers c ON s.CustomerId = c.Id
+      WHERE s.IsActive = 1 ${dateFilter}
+      ORDER BY s.Date DESC
+    `;
+
+    const result = await sql.query(query);
+    res.status(200).json({ records: result.recordset });
+
+  } catch (error) {
+    console.error("PRODUCT WISE REPORT ERROR:", error);
+    res.status(500).json({ message: "Error loading report" });
   }
 };
