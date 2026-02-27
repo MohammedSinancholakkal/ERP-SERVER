@@ -20,13 +20,8 @@ module.exports = function (requiredPermissionKey) {
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      // 1. SuperAdmin Bypass (Fast check if already populated or check ID/Name)
-      const username = authUser.username || "";
-      const role = authUser.role || "";
-      
-      if (username.toLowerCase() === "superadmin" || role.toLowerCase() === "superadmin") {
-        return next();
-      }
+      // 1. SuperAdmin Bypass (only by userId === 1)
+      if (authUser.userId === 1) return next();
 
       // 2. Fetch Effective Permissions (Db Lookup)
       // Note: If you want to optimize, check if 'authUser.permissions' is already populated by a previous middleware.

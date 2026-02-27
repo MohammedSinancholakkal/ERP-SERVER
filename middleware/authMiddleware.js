@@ -27,8 +27,8 @@ const authMiddleware = async (req, res, next) => {
 
     req.user = decoded; // { userId, username, role }
 
-    // 1. SuperAdmin Bypass
-    if (decoded.role?.toLowerCase() === "superadmin" || decoded.username?.toLowerCase() === "superadmin") {
+    // 1. SuperAdmin Bypass (only check userId === 1)
+    if (decoded.userId === 1) {
       req.user.permissions = ["*"]; // Grant all
       return next();
     }

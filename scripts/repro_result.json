@@ -1,0 +1,78 @@
+{
+  "ADD": [
+    {
+      "VType": "PURCHASE"
+    },
+    {
+      "VType": "PURCHASE"
+    },
+    {
+      "VType": "PURCHASE"
+    },
+    {
+      "VType": "PURCHASE"
+    },
+    {
+      "VType": "PURCHASE"
+    },
+    {
+      "VType": "PURCHASE"
+    }
+  ],
+  "UPDATE": [
+    {
+      "Id": "696",
+      "VNo": "20260217123448844",
+      "VType": "PAYMENT",
+      "COA": "1010201",
+      "Debit": 0,
+      "Credit": 1180,
+      "Narration": "Bank Credit (Payment Updated) For Invoice No. INV-TEST-1771311888843"
+    },
+    {
+      "Id": "695",
+      "VNo": "20260217123448844",
+      "VType": "PAYMENT",
+      "COA": "50200001",
+      "Debit": 1180,
+      "Credit": 0,
+      "Narration": "Supplier Debit (Payment Updated) For Invoice No. INV-TEST-1771311888843"
+    },
+    {
+      "Id": "694",
+      "VNo": "20260217123448844",
+      "VType": "PURCHASE",
+      "COA": "402",
+      "Debit": 1000,
+      "Credit": 0,
+      "Narration": "Company Credit For Home button"
+    },
+    {
+      "Id": "693",
+      "VNo": "20260217123448844",
+      "VType": "PURCHASE",
+      "COA": "50200001",
+      "Debit": 0,
+      "Credit": 1180,
+      "Narration": "Supplier Credit For Invoice No. INV-TEST-1771311888843"
+    },
+    {
+      "Id": "692",
+      "VNo": "20260217123448844",
+      "VType": "PURCHASE",
+      "COA": "1010301",
+      "Debit": 180,
+      "Credit": 0,
+      "Narration": "Input Tax For Invoice No. INV-TEST-1771311888843"
+    },
+    {
+      "Id": "691",
+      "VNo": "20260217123448844",
+      "VType": "PURCHASE",
+      "COA": "1020010",
+      "Debit": 1000,
+      "Credit": 0,
+      "Narration": "Inventory Debit For Invoice No. INV-TEST-1771311888843"
+    }
+  ]
+}

@@ -5,7 +5,7 @@ const sql = require("../db/dbConfig");
 // ================================
 exports.getAllAgendaItemTypes = async (req, res) => {
   try {
-    // Pagination inputs
+    // Pagination inputs       
     let page = parseInt(req.query.page) || 1;
     let limit = parseInt(req.query.limit) || 25;    
     let offset = (page - 1) * limit;

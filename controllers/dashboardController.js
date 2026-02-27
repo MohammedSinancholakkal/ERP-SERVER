@@ -133,7 +133,7 @@ exports.getDashboardStats = async (req, res) => {
 
     // 6. LATEST ORDERS
     const latestOrdersResult = await sql.query`
-      SELECT TOP 5 
+      SELECT TOP 7 
         s.Id, 
         s.GrandTotal, 
         (SELECT TOP 1 ProductName FROM SaleDetails sd WHERE sd.SaleId = s.Id) AS ItemName,
@@ -182,16 +182,7 @@ exports.getTodaysReport = async (req, res) => {
     const pool = await sql.connect();
     let salesResult, purchaseResult;
     
-    // Use server date logic consistent with Dashboard Stats but FORCE IST
-    // "en-CA" gives YYYY-MM-DD. We force timeZone to Asia/Kolkata.
-    // If it's 11:00 AM IST (Feb 7), it's Feb 7.
-    // If it's 2:00 AM IST (Feb 7), it's Feb 7.
-    // Even if server is UTC (which would be Feb 6 8:30 PM), we want Feb 7.
     const serverDateIST = new Date().toLocaleString("en-CA", { timeZone: "Asia/Kolkata" }).split(",")[0];
-    
-    // Only use clientDate if specifically provided and different? 
-    // Actually, user wants consistency. Let's favor serverDate for "Today's Report".
-    // Or support date filtering if needed later, but default to serverDate.
     const dateToUse = clientDate || serverDateIST; 
 
     if (dateToUse) {

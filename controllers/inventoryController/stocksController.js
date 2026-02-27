@@ -407,6 +407,18 @@ exports.restoreStock = async (req, res) => {
 // ================================
 exports.getStockReport = async (req, res) => {
     try {
+        const sortBy = req.query.sortBy || "productName";
+        const order = (req.query.order || "ASC").toUpperCase();
+
+        let sortColumn = "P.ProductName";
+        if (sortBy === "productName") sortColumn = "P.ProductName";
+        else if (sortBy === "categoryName") sortColumn = "C.Name";
+        else if (sortBy === "qtyIn") sortColumn = "P.QuantityIn";
+        else if (sortBy === "qtyOut") sortColumn = "P.QuantityOut";
+        else if (sortBy === "stock") sortColumn = "P.UnitsInStock";
+        else if (sortBy === "salePrice") sortColumn = "P.UnitPrice";
+        else if (sortBy === "purchasePrice") sortColumn = "purchasePrice"; // Special case for subquery
+
         const query = `
             SELECT 
                 P.Id AS id,
@@ -426,7 +438,7 @@ exports.getStockReport = async (req, res) => {
             FROM Products P
             LEFT JOIN Categories C ON P.CategoryId = C.Id
             WHERE P.IsActive = 1
-            ORDER BY P.ProductName ASC
+            ORDER BY ${sortColumn} ${order}
         `;
 
         const result = await sql.query(query);

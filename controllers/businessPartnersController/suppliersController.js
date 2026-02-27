@@ -134,6 +134,7 @@ const accountingService = require("../../services/accountingService");
 // ADD SUPPLIER
 // =============================================================
 exports.addSupplier = async (req, res) => {
+
   const {
     companyName,
     countryId,
@@ -157,6 +158,13 @@ exports.addSupplier = async (req, res) => {
     addressLine1,
     addressLine2
   } = req.body;
+
+  // Backend validation for required fields
+  if (!companyName || !countryId || !stateId || !cityId || !userId) {
+    return res.status(400).json({
+      message: "Missing required fields. Please provide: companyName, countryId, stateId, cityId, userId."
+    });
+  }
 
   try {
      // 1. Ensure COA Head Exists (Parent: 'Sundry Creditors' - Code '20102') 
@@ -204,7 +212,7 @@ exports.addSupplier = async (req, res) => {
     });
   } catch (error) {
     console.error("ADD SUPPLIER ERROR:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -445,14 +453,16 @@ exports.restoreSupplier = async (req, res) => {
 // =============================================================
 exports.getSupplierPayables = async (req, res) => {
     try {
-        // Query to get Total Credit (Payable) and Total Debit (Paid) from Transactions for each Supplier's COA
-        // We join Suppliers with Transactions on COAId
-        
-        // Note: For Suppliers (Liability):
-        // Credit to Supplier Account = Payable (Bill/Invoice Received)
-        // Debit to Supplier Account = Paid (Payment made)
-        
-        const result = await sql.query`
+        const sortBy = req.query.sortBy || "companyName";
+        const order = (req.query.order || "ASC").toUpperCase();
+
+        let sortColumn = "S.CompanyName";
+        if (sortBy === "companyName") sortColumn = "S.CompanyName";
+        else if (sortBy === "payable") sortColumn = "ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0)";
+        else if (sortBy === "paid") sortColumn = "ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0)";
+        else if (sortBy === "balance") sortColumn = "(ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) - ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0))";
+
+        const query = `
             SELECT 
                 S.Id AS id,
                 S.CompanyName AS companyName,
@@ -468,8 +478,10 @@ exports.getSupplierPayables = async (req, res) => {
             GROUP BY S.Id, S.CompanyName, S.Phone, S.COAId
             HAVING (ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) > 0 
                  OR ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) > 0)
-            ORDER BY S.CompanyName ASC
+            ORDER BY ${sortColumn} ${order}
         `;
+
+        const result = await sql.query(query);
 
         res.status(200).json(result.recordset);
 

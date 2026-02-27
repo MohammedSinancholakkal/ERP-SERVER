@@ -13,7 +13,7 @@ exports.getAllRoles = async (req, res) => {
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
       FROM Roles
-      WHERE isActive = 1
+      WHERE isActive = 1 AND RoleId <> 1
     `;
 
     // PAGINATED LIST
@@ -30,7 +30,7 @@ exports.getAllRoles = async (req, res) => {
         RoleId AS id,
         LOWER(RoleName) AS roleName
       FROM Roles
-      WHERE isActive = 1
+      WHERE isActive = 1 AND RoleId <> 1
       ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
@@ -161,6 +161,7 @@ exports.searchRoles = async (req, res) => {
         LOWER(RoleName) AS roleName
       FROM Roles
       WHERE IsActive = 1 
+        AND RoleId <> 1
         AND RoleName LIKE '%' + ${q} + '%'
       ORDER BY RoleId DESC
     `;

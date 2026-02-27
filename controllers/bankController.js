@@ -60,7 +60,7 @@ const syncBankToCOA = async (transaction, bankId, bankName, isCompanyBank, userI
             .input('pCode', sql.VarChar, parentHead)
             .query("UPDATE Accounts SET IsTransaction = 0 WHERE HeadCode = @pCode");
 
-        // 2. Logic: If NOT Company Bank -> Deactivate Linked COA
+        // 2. Logic: If NOT eligible for COA -> Deactivate Linked COA
         if (!isCompanyBank) {
             await transaction.request()
                 .input('bid', sql.Int, bankId)
@@ -73,12 +73,9 @@ const syncBankToCOA = async (transaction, bankId, bankName, isCompanyBank, userI
             return;
         }
 
-        // 3. Logic: If COMPANY Bank -> Activate & Ensure One Exists
+        // 3. Logic: If eligible for COA -> Activate & Ensure One Exists
         
-        // A. Deactivate ALL other Bank Ledger Accounts first to ensure single source of truth
-        await transaction.request()
-            .input('bid', sql.Int, bankId)
-            .query("UPDATE Accounts SET IsActive = 0 WHERE BankId IS NOT NULL AND BankId != @bid");
+        // Removed global deactivation to allow multiple banks (Company & Internal) to co-exist under 'Cash At Bank'.
 
         // B. Check if this bank already has a COA Ledger (Active or Inactive)
         const checkRes = await transaction.request()
@@ -158,6 +155,7 @@ exports.getAllBanks = async (req, res) => {
     else if (sortBy === "ACNumber") sortColumn = "ACNumber";
     else if (sortBy === "Branch") sortColumn = "Branch";
     else if (sortBy === "isCompanyBank") sortColumn = "IsCompanyBank";
+    else if (sortBy === "isInternalBank") sortColumn = "IsInternalBank";
     else if (sortBy === "id") sortColumn = "Id";
 
     const query = `
@@ -182,7 +180,7 @@ exports.getAllBanks = async (req, res) => {
    ADD BANK
 ---------------------------------------------------------- */
 exports.addBank = async (req, res) => {
-  const { BankName, ACName, ACNumber, Branch, userId, isCompanyBank } = req.body;
+  const { BankName, ACName, ACNumber, Branch, userId, isCompanyBank, isInternalBank } = req.body;
 
   if (!BankName || !ACName || !ACNumber)
     return res.status(400).json({ message: "Required fields missing" });
@@ -200,6 +198,7 @@ exports.addBank = async (req, res) => {
 
     // If setting this bank as company bank, reset others first
     const isCompany = (String(isCompanyBank) === "true" || isCompanyBank === true) ? 1 : 0;
+    const isInternal = (String(isInternalBank) === "true" || isInternalBank === true) ? 1 : 0;
     
     if (isCompany) {
       // Deactivate others
@@ -214,16 +213,17 @@ exports.addBank = async (req, res) => {
       .input('pic', sql.VarChar, filePath)
       .input('uid', sql.Int, userId)
       .input('isComp', sql.Bit, isCompany)
+      .input('isInt', sql.Bit, isInternal)
       .query(`
-        INSERT INTO Banks (BankName, ACName, ACNumber, Branch, SignaturePicture, InsertUserId, IsCompanyBank, IsActive)
+        INSERT INTO Banks (BankName, ACName, ACNumber, Branch, SignaturePicture, InsertUserId, IsCompanyBank, IsInternalBank, IsActive)
         OUTPUT INSERTED.Id
-        VALUES (@bName, @acName, @acNum, @branch, @pic, @uid, @isComp, 1)
+        VALUES (@bName, @acName, @acNum, @branch, @pic, @uid, @isComp, @isInt, 1)
       `);
       
     const newBankId = insertRes.recordset[0].Id;
 
     // SYNC COA
-    await syncBankToCOA(transaction, newBankId, BankName, isCompany === 1, userId);
+    await syncBankToCOA(transaction, newBankId, BankName, isCompany === 1 || isInternal === 1, userId);
 
     await transaction.commit();
     res.status(201).json({ message: "Bank added successfully" });
@@ -240,7 +240,7 @@ exports.addBank = async (req, res) => {
 ---------------------------------------------------------- */
 exports.updateBank = async (req, res) => {
   const { id } = req.params;
-  const { BankName, ACName, ACNumber, Branch, userId, SignaturePicture, isCompanyBank } = req.body;
+  const { BankName, ACName, ACNumber, Branch, userId, SignaturePicture, isCompanyBank, isInternalBank } = req.body;
 
   const pool = await sql.connect();
   const transaction = new sql.Transaction(pool);
@@ -267,6 +267,7 @@ exports.updateBank = async (req, res) => {
     await transaction.begin();
 
     const isCompany = (String(isCompanyBank) === "true" || isCompanyBank === true) ? 1 : 0;
+    const isInternal = (String(isInternalBank) === "true" || isInternalBank === true) ? 1 : 0;
 
     // If setting this as company bank, reset others
     if (isCompany) {
@@ -283,6 +284,7 @@ exports.updateBank = async (req, res) => {
       .input('pic', sql.VarChar, finalImage)
       .input('uid', sql.Int, userId)
       .input('isComp', sql.Bit, isCompany)
+      .input('isInt', sql.Bit, isInternal)
       .input('id', sql.Int, id)
       .query(`
         UPDATE Banks
@@ -293,12 +295,13 @@ exports.updateBank = async (req, res) => {
             SignaturePicture = @pic,
             UpdateUserId = @uid,
             UpdateDate = GETDATE(),
-            IsCompanyBank = @isComp
+            IsCompanyBank = @isComp,
+            IsInternalBank = @isInt
         WHERE Id = @id
       `);
 
     // SYNC COA
-    await syncBankToCOA(transaction, id, BankName, isCompany === 1, userId);
+    await syncBankToCOA(transaction, id, BankName, isCompany === 1 || isInternal === 1, userId);
 
     await transaction.commit();
 
@@ -403,7 +406,7 @@ exports.searchBanks = async (req, res) => {
 exports.getBanksDropdown = async (req, res) => {
   try {
     const result = await sql.query`
-      SELECT Id, BankName
+      SELECT Id, BankName, IsInternalBank, IsCompanyBank
       FROM Banks
       WHERE IsActive = 1
       ORDER BY BankName ASC
@@ -461,12 +464,13 @@ exports.restoreBank = async (req, res) => {
     // Get Bank Info to Sync COA
     const bankRes = await transaction.request()
         .input('id', sql.Int, id)
-        .query("SELECT BankName, IsCompanyBank FROM Banks WHERE Id = @id");
+        .query("SELECT BankName, IsCompanyBank, IsInternalBank FROM Banks WHERE Id = @id");
         
     if (bankRes.recordset.length > 0) {
         const bank = bankRes.recordset[0];
-        // Trigger Sync
-        await syncBankToCOA(transaction, id, bank.BankName, bank.IsCompanyBank, userId);
+        // Trigger Sync if strictly company OR internal
+        const isEligible = bank.IsCompanyBank || bank.IsInternalBank;
+        await syncBankToCOA(transaction, id, bank.BankName, isEligible, userId);
     }
     
     await transaction.commit();

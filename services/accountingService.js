@@ -90,7 +90,39 @@ exports.recordTransaction = async ({ vNo, vType, date, entries, userId, transact
         // 2. Use provided transaction or new one (if not provided, create internal transaction? 
         // Ideally this runs inside the caller's transaction)
         
-        // 3. Insert Entries
+        // 3. Determine FYId
+        let finalFYId = 1; // Default
+        
+        // If passed in options
+        // We need to update the function signature to accept it or check if it's in the object?
+        // The signature is ({ vNo, vType, date, entries, userId, transaction, insertDate })
+        // Let's check `arguments` or just add it to destructuring if allowed. 
+        // Wait, I can't change the signature easily without breaking callers if they pass positional args?
+        // No, it uses object destructuring. So adding a new property 'fyId' is safe.
+        // But I need to update the signature line too.
+        
+        // Let's do the lookup logic inside.
+        if (transaction) {
+             const fyReq = new sql.Request(transaction);
+             const fyRes = await fyReq.query(`SELECT TOP 1 Id FROM FinancialYear WHERE '${new Date(date).toISOString()}' BETWEEN FromDate AND ToDate`);
+             if (fyRes.recordset.length > 0) {
+                 finalFYId = fyRes.recordset[0].Id;
+             } else {
+                 const activeFy = await fyReq.query(`SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1`);
+                 if(activeFy.recordset.length > 0) finalFYId = activeFy.recordset[0].Id;
+             }
+        } else {
+             // Fallback if no transaction object (unlikely in this flow but possible)
+             const fyRes = await sql.query(`SELECT TOP 1 Id FROM FinancialYear WHERE '${new Date(date).toISOString()}' BETWEEN FromDate AND ToDate`);
+             if (fyRes.recordset.length > 0) {
+                 finalFYId = fyRes.recordset[0].Id;
+             } else {
+                 const activeFy = await sql.query(`SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1`);
+                 if(activeFy.recordset.length > 0) finalFYId = activeFy.recordset[0].Id;
+             }
+        }
+
+        // 4. Insert Entries
         for (const entry of entries) {
             // Skip zero entries
             if ((!entry.debit && !entry.credit) || (entry.debit === 0 && entry.credit === 0)) continue;
@@ -100,15 +132,11 @@ exports.recordTransaction = async ({ vNo, vType, date, entries, userId, transact
             // Fetch Account Code (HeadCode) for COA column
             let headCode = entry.headCode;
             if(!headCode) {
-                const headRes = await new sql.Request().query(`SELECT HeadCode FROM Accounts WHERE Id = ${entry.coaId}`);
+                // BUG FIX: Use transaction if available to avoid deadlocks/hangs
+                const headReq = transaction ? new sql.Request(transaction) : new sql.Request();
+                const headRes = await headReq.query(`SELECT HeadCode FROM Accounts WHERE Id = ${entry.coaId}`);
                 headCode = headRes.recordset[0]?.HeadCode || 'Unknown';
             }
-
-            // Use provided insertDate or DB default GETDATE()
-            // Note: If insertDate is provided, we pass it. If not, we use GETDATE() in SQL.
-            // However, with tagged template literals in mssql, we can pass null/undefined? 
-            // Better to construct the value or use a SQL expression.
-            // To be safe, if insertDate is present, usage: ${insertDate}, else GETDATE()
             
             await req.query`
                 INSERT INTO Transactions 
@@ -128,22 +156,9 @@ exports.recordTransaction = async ({ vNo, vType, date, entries, userId, transact
                     ${insertDate || new Date()}, 
                     ${userId}, 
                     1, 
-                    1 
+                    ${finalFYId} 
                 )
             `; 
-            // NOTE: ${insertDate || sql.DateTime} might not work if sql.DateTime isn't a value but a type.
-            // Let's rely on the fact that if we want GETDATE(), we can't easily pass it as a param in the values list if we want to toggle.
-            // ACTUALLY, simpler approach:
-            /*
-             if(insertDate) {
-                 ... VALUES (..., ${insertDate}, ...)
-             } else {
-                 ... VALUES (..., GETDATE(), ...)
-             }
-            */
-           // But since I can't conditionally change the query structure easily in this tool without replacing the whole block,
-           // I will assume insertDate is ALWAYS passed from now on for these flows, or I'll handle it.
-           // However, to keep it robust:
         }
 
     } catch (error) {

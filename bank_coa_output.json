@@ -1,0 +1,26 @@
+[
+  {
+    "HeadCode": "10102",
+    "HeadName": "Cash & Cash Equivalent",
+    "ParentHead": 101,
+    "HeadLevel": 3
+  },
+  {
+    "HeadCode": "1010201",
+    "HeadName": "Cash In Hand ",
+    "ParentHead": 10102,
+    "HeadLevel": 4
+  },
+  {
+    "HeadCode": "1010202",
+    "HeadName": "Cash At Bank",
+    "ParentHead": 10102,
+    "HeadLevel": 4
+  },
+  {
+    "HeadCode": "415",
+    "HeadName": "Bank charges",
+    "ParentHead": 4,
+    "HeadLevel": 2
+  }
+]

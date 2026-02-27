@@ -228,6 +228,11 @@ exports.addPurchase = async (req, res) => {
   const now = new Date(); // Synchronized time for VNo and InsertDate
   const vno = generateVNo(now); // Override provided vno with standardized format
 
+  // Fallback for InvoiceNo if missing
+  let finalInvoiceNo = invoiceNo;
+  // REMOVED: Auto-generation of PUR-YYYY... as per user request to keep it empty if not provided.
+
+
   const transaction = new sql.Transaction();
 
   try {
@@ -248,7 +253,7 @@ exports.addPurchase = async (req, res) => {
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${supplierId}, ${invoiceNo || null}, ${purchaseOrderNo || null}, ${date},
+        ${supplierId}, ${finalInvoiceNo || ''}, ${purchaseOrderNo || null}, ${date},
         ${safeNumbers.discount}, ${safeNumbers.totalDiscount}, ${safeNumbers.shippingCost},
         ${safeNumbers.grandTotal}, ${safeNumbers.netTotal}, ${safeNumbers.paidAmount}, ${safeNumbers.due}, ${safeNumbers.change},
         ${details}, ${paymentAccount}, ${employeeId}, ${vno},
@@ -359,6 +364,13 @@ exports.addPurchase = async (req, res) => {
              if (safeNumbers.totalTax > 0) {
                  taxAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Input Tax' OR HeadName = 'Duties & Taxes'`);
              }
+        
+             // Fetch Account 402 (Product Purchase / Company Credit)
+             let productPurchaseAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadCode = '402'`);
+             if (!productPurchaseAcc) {
+                 // Fallback if 402 not exactly found, try 401 or similar name
+                 productPurchaseAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Product Purchase'`);
+             }
              
              // Supplier Details (Already fetched? No, need Code)
              const supAccountRes = await getHead(`SELECT HeadCode FROM Accounts WHERE Id = ${supplierCOAId}`);
@@ -393,8 +405,6 @@ exports.addPurchase = async (req, res) => {
                      narration: `Supplier. ${supplierName}` 
                  });
              
-             // 3. EXPENSE/REF: Debit Account 402 (Product Purchase) -> REMOVED
-             
              // 5. TAX (Liability/Asset)
              if (safeNumbers.totalTax > 0 && taxAcc) {
                  invoiceEntries.push({ 
@@ -403,6 +413,18 @@ exports.addPurchase = async (req, res) => {
                      debit: safeNumbers.totalTax, 
                      credit: 0, 
                      narration: "Input Tax" 
+                 });
+             }
+
+             // 3. EXPENSE/REF: Debit Account 402 (Product Purchase / Company Credit)
+             // As per user request: "Company Credit For {SupplierName}"
+             if (productPurchaseAcc) {
+                 invoiceEntries.push({ 
+                     coaId: productPurchaseAcc.Id, 
+                     headCode: productPurchaseAcc.HeadCode,
+                     debit: inventoryAmount, // Same amount as Inventory Debit
+                     credit: 0, 
+                     narration: `Company Credit For ${supplierName}` 
                  });
              }
 
@@ -436,22 +458,40 @@ exports.addPurchase = async (req, res) => {
                  // Payment Account Lookup (Robust)
                  // Payment Account Lookup (Robust)
                  let bankAcc;
+                 let isCompanyBankLookup = false;
+
                  if (paymentAccount) {
-                      if (!isNaN(paymentAccount)) {
-                          // ID provided
-                          bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE Id = ${paymentAccount}`);
-                      } else {
-                          // Name provided
-                          bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName = '${paymentAccount}'`);
-                          
-                          // If not found, try common variations if it looks like Cash/Bank
-                          if (!bankAcc) {
-                               const paLower = paymentAccount.toLowerCase();
-                               if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
-                                    bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`);
-                               } else if (paLower.includes("bank")) {
-                                    bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`);
-                               }
+                      // 1. PRIORITIZE COMPANY BANK LOOKUP for "Cash at Bank"
+                      if (paymentAccount === 'Cash at Bank' || paymentAccount === 'Bank') {
+                           const companyBankRes = await getHead(`
+                               SELECT TOP 1 acc.Id, acc.HeadCode 
+                               FROM Accounts acc 
+                               JOIN Banks b ON acc.BankId = b.Id 
+                               WHERE b.IsCompanyBank = 1 AND b.IsActive = 1 AND acc.IsActive = 1
+                           `);
+                           if (companyBankRes) {
+                               bankAcc = companyBankRes;
+                               isCompanyBankLookup = true;
+                           }
+                      }
+
+                      if (!isCompanyBankLookup) {
+                          if (!isNaN(paymentAccount)) {
+                              // ID provided
+                              bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE Id = ${paymentAccount}`);
+                          } else {
+                              // Name provided
+                              bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName = '${paymentAccount}'`);
+                              
+                              // If not found, try common variations if it looks like Cash/Bank
+                              if (!bankAcc) {
+                                   const paLower = paymentAccount.toLowerCase();
+                                   if (paLower.includes("cash") && (paLower.includes("hand") || paLower.includes("in"))) {
+                                        bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Cash%Hand%'`);
+                                   } else if (paLower.includes("bank")) {
+                                        bankAcc = await getHead(`SELECT Id, HeadCode FROM Accounts WHERE HeadName LIKE '%Bank%' OR HeadName LIKE '%Cash%Bank%'`);
+                                   }
+                              }
                           }
                       }
                  }
@@ -487,7 +527,7 @@ exports.addPurchase = async (req, res) => {
                          // But if same VNo, maybe PURCHASE type is fine? 
                          // updatePurchase used 'PAYMENT' type for the second transaction. 
                          // Let's use 'PAYMENT' to be consistent.
-                         vType: 'PAYMENT',
+                         vType: 'PURCHASE',
                          date: date,
                          entries: paymentEntries,
                          userId: userId,
@@ -516,7 +556,7 @@ exports.addPurchase = async (req, res) => {
         }
     }
     console.error("ADD PURCHASE ERROR:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message, stack: error.stack });
   }
 };
 
@@ -564,9 +604,10 @@ exports.updatePurchase = async (req, res) => {
     paidAmount: Number(paidAmount) || 0,
     due: Number(due) || 0,
     change: Number(change) || 0,
-
+    totalTax: Number(totalTax) || 0,
   };
 
+  
   const transaction = new sql.Transaction();
 
   try {
@@ -690,17 +731,17 @@ exports.updatePurchase = async (req, res) => {
 
 
     // ==============================================================================================
-    // 📢 ACCOUNTING UPDATE (DELETE OLD + RE-INSERT NEW)
+     // ==============================================================================================
+    // 📢 ACCOUNTING UPDATE (APPEND PAYMENT HISTORY)
     // ==============================================================================================
     try {
-         // 1. Delete Old Transactions
+         // 1. DELETE DISABLED - Preserve History
+         /*
          const delTrans = new sql.Request(transaction);
-         // Delete both PURCHASE and PAYMENT entries for this Voucher to avoid duplicates
-         // USE oldVNo to delete what was there before! If oldVNo was null, try finalVNo.
          const vnoToDelete = oldVNo || finalVNo;
          await delTrans.query`DELETE FROM Transactions WHERE VNo = ${vnoToDelete} AND (Vtype = 'PURCHASE' OR Vtype = 'PAYMENT')`; 
+         */
 
-         // 2. Re-calculate and Insert New Transactions
          // Ensure date is valid or max length for SQL check
          const txnDate = date ? new Date(date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
@@ -713,42 +754,44 @@ exports.updatePurchase = async (req, res) => {
              const headRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${supplierCOAId}`;
              const supplierHeadCode = headRes.recordset[0]?.HeadCode;
 
-             // Find Inventory Account
-             let inventoryRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Inventory'`;
-             let inventoryCOAId = inventoryRes.recordset[0]?.Id;
-             let inventoryHeadCode = inventoryRes.recordset[0]?.HeadCode;
-
-             // Find Tax Account
-             let taxCOAId, taxHeadCode;
-             if (Number(safeNumbers.totalTax) > 0) {
-                 const taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Input Tax'`;
-                 taxCOAId = taxRes.recordset[0]?.Id;
-                 taxHeadCode = taxRes.recordset[0]?.HeadCode;
-                 if(!taxCOAId) {
-                      const taxRes2 = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Duties & Taxes'`;
-                      taxCOAId = taxRes2.recordset[0]?.Id;
-                      taxHeadCode = taxRes2.recordset[0]?.HeadCode;
-                 }
-             }
-
              // Find Bank/Cash Account
              let bankCOAId, bankHeadCode;
+             let isCompanyBankLookup = false;
+
              if (paymentAccount) {
                   let bankRes;
-                  // Check if paymentAccount is numeric (ID) or string (Name)
-                  if (isNaN(paymentAccount)) {
-                      // It's a name like 'Cash at Bank' or 'Cash at Hand'
-                      bankRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = ${paymentAccount}`;
-                      if (bankRes.recordset.length > 0) {
-                          bankCOAId = bankRes.recordset[0].Id; // Use the fetched ID
-                          bankHeadCode = bankRes.recordset[0].HeadCode;
-                      }
-                  } else {
-                      // It's an ID
-                      bankRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${paymentAccount}`;
-                      if (bankRes.recordset.length > 0) {
-                          bankCOAId = paymentAccount;
-                          bankHeadCode = bankRes.recordset[0].HeadCode;
+                  
+                  // 1. PRIORITIZE COMPANY BANK LOOKUP for "Cash at Bank"
+                  if (paymentAccount === 'Cash at Bank' || paymentAccount === 'Bank') {
+                       const companyBankRes = await new sql.Request(transaction).query`
+                           SELECT TOP 1 acc.Id, acc.HeadCode 
+                           FROM Accounts acc 
+                           JOIN Banks b ON acc.BankId = b.Id 
+                           WHERE b.IsCompanyBank = 1 AND b.IsActive = 1 AND acc.IsActive = 1
+                       `;
+                       if (companyBankRes.recordset.length > 0) {
+                           bankCOAId = companyBankRes.recordset[0].Id;
+                           bankHeadCode = companyBankRes.recordset[0].HeadCode;
+                           isCompanyBankLookup = true;
+                       }
+                  }
+
+                  if (!isCompanyBankLookup) {
+                      // Check if paymentAccount is numeric (ID) or string (Name)
+                      if (isNaN(paymentAccount)) {
+                          // It's a name like 'Cash at Bank' or 'Cash at Hand'
+                          bankRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = ${paymentAccount}`;
+                          if (bankRes.recordset.length > 0) {
+                              bankCOAId = bankRes.recordset[0].Id; // Use the fetched ID
+                              bankHeadCode = bankRes.recordset[0].HeadCode;
+                          }
+                      } else {
+                          // It's an ID
+                          bankRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${paymentAccount}`;
+                          if (bankRes.recordset.length > 0) {
+                              bankCOAId = paymentAccount;
+                              bankHeadCode = bankRes.recordset[0].HeadCode;
+                          }
                       }
                   }
              }
@@ -762,84 +805,57 @@ exports.updatePurchase = async (req, res) => {
                   }
              }
 
-             // A. PURCHASE INVOICE ENTRIES
-             const invoiceEntries = [];
+             // CALCULATE PAYMENT DIFFERENCE
+             // We sum the 'Debit' usage of the Supplier Account for this VNo/Invoice to find total paid so far.
+             // (Debit Supplier = Payment Made)
+             // Check both PURCHASE and PAYMENT types just in case
+             const paidCheckRes = await new sql.Request(transaction).query`
+                SELECT ISNULL(SUM(Debit), 0) as TotalPaid 
+                FROM Transactions 
+                WHERE (VNo = ${finalVNo} OR VNo = ${oldVNo})
+                AND COAId = ${supplierCOAId}
+                AND (VType = 'PURCHASE' OR VType = 'PAYMENT')
+             `;
+             const previouslyPaid = paidCheckRes.recordset[0] ? paidCheckRes.recordset[0].TotalPaid : 0;
+             const newTotalPaid = Number(safeNumbers.paidAmount);
+             const paymentDiff = newTotalPaid - previouslyPaid;
 
-              // Debit Inventory (Net of Tax - Exclusive)
-              const inventoryAmount = safeNumbers.netTotal - safeNumbers.totalTax;
-              
-              if (inventoryCOAId) {
-                  invoiceEntries.push({
-                      coaId: inventoryCOAId,
-                      headCode: inventoryHeadCode,
-                      debit: inventoryAmount,
-                      credit: 0,
-                      narration: `Inventory Debit (Updated) For Invoice No. ${invoiceNo || dbInvoiceNo || finalVNo}`
-                  });
-              }
-
-              if (taxCOAId && safeNumbers.totalTax > 0) {
-                  invoiceEntries.push({
-                      coaId: taxCOAId,
-                      headCode: taxHeadCode,
-                      debit: safeNumbers.totalTax,
-                      credit: 0,
-                      narration: `Input Tax (Updated) For Invoice No. ${invoiceNo || dbInvoiceNo || finalVNo}`
-                  });
-              }
-
-             // Credit Supplier
-             invoiceEntries.push({
-                 coaId: supplierCOAId,
-                 headCode: supplierHeadCode,
-                 debit: 0,
-                 credit: safeNumbers.netTotal, // Final Payable (Subtotal + Tax + Shipping)
-                 narration: `Supplier Credit (Updated) For Invoice No. ${invoiceNo || dbInvoiceNo || finalVNo}`
-             });
-
-             await accountingService.recordTransaction({
-                 vNo: finalVNo,
-                 vType: 'PURCHASE',
-                 date: txnDate,
-                 entries: invoiceEntries,
-                 userId: userId,
-                 transaction: transaction
-             });
-
-
-             // B. PAYMENT (PAYMENT VOUCHER)
-             if (Number(safeNumbers.paidAmount) > 0 && bankCOAId) {
+             if (paymentDiff > 0 && bankCOAId) {
                  const paymentEntries = [];
+                 
+                 // Generate new VNo for this payment update transaction
+                 const { generateVNo } = require("../../utils/vnoUtils");
+                 const paymentVNo = generateVNo(new Date());
 
-                 // Debit Supplier
-                 paymentEntries.push({
-                     coaId: supplierCOAId,
-                     headCode: supplierHeadCode,
-                     debit: safeNumbers.paidAmount,
-                     credit: 0,
-                     narration: `Supplier Debit (Payment Updated) For Invoice No. ${invoiceNo || dbInvoiceNo || finalVNo}`
-                 });
-
-                 // Credit Bank
+                 // Credit Bank/Cash (Asset Decrease)
                  paymentEntries.push({
                      coaId: bankCOAId,
                      headCode: bankHeadCode,
                      debit: 0,
-                     credit: safeNumbers.paidAmount,
-                     narration: `Bank Credit (Payment Updated) For Invoice No. ${invoiceNo || dbInvoiceNo || finalVNo}`
+                     credit: paymentDiff,
+                     narration: `Paid amount (Updated) for Supplier. ${supplierName}`
+                 });
+
+                 // Debit Supplier (Liability Decrease)
+                 paymentEntries.push({
+                     coaId: supplierCOAId,
+                     headCode: supplierHeadCode,
+                     debit: paymentDiff,
+                     credit: 0,
+                     narration: `Supplier. ${supplierName} (Updated)`
                  });
 
                  await accountingService.recordTransaction({
-                     vNo: finalVNo,
-                     vType: 'PAYMENT',
+                     vNo: paymentVNo, 
+                     vType: 'PURCHASE', // As requested
                      date: txnDate,
                      entries: paymentEntries,
                      userId: userId,
-                     transaction: transaction
+                     transaction: transaction,
+                     insertDate: new Date()
                  });
              }
          }
-
     } catch (accErr) {
         console.error("ACCOUNTING UPDATE ERROR:", accErr);
         throw new Error("Failed to update accounting entries: " + accErr.message);

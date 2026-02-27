@@ -1,0 +1,149 @@
+[2026-02-17T12:26:17.235Z] --- WAITING FOR DB ---
+[2026-02-17T12:26:18.447Z] 🟢 MSSQL Connected (Ready)
+[2026-02-17T12:26:20.452Z] --- STEP 0: RESET TRANSACTIONS & PURCHASES ---
+[2026-02-17T12:26:23.954Z] DEBUG: Company Credit Account:
+[ { Id: 76, HeadCode: '402', HeadName: 'Product Purchase' } ]
+[2026-02-17T12:26:23.960Z] --- STEP 1: ADD PURCHASE (Partial Pay: 500) ---
+[2026-02-17T12:26:29.803Z] ADD RESPONSE 200
+{ message: 'Purchase added successfully' }
+[2026-02-17T12:26:30.350Z] Created Purchase ID: 105, VNo: 20260217175623963
+[2026-02-17T12:26:30.939Z] Step 1 Transactions (Count: 6)
+[
+  {
+    Id: '1',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '26',
+    COA: '1020010',
+    Narration: 'Inventory Debit For Supplier Home button',
+    Debit: 820,
+    Credit: 0,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  },
+  {
+    Id: '2',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '28',
+    COA: '50200001',
+    Narration: 'Supplier. Home button',
+    Debit: 0,
+    Credit: 1000,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  },
+  {
+    Id: '3',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '24',
+    COA: '1010301',
+    Narration: 'Input Tax',
+    Debit: 180,
+    Credit: 0,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  },
+  {
+    Id: '4',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '76',
+    COA: '402',
+    Narration: 'Company Credit For Home button',
+    Debit: 820,
+    Credit: 0,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  },
+  {
+    Id: '5',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '9',
+    COA: '10102',
+    Narration: 'Paid amount for Supplier. Home button',
+    Debit: 0,
+    Credit: 500,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  },
+  {
+    Id: '6',
+    VNo: '20260217175623963',
+    Vtype: 'PURCHASE',
+    VDate: 2026-02-17T00:00:00.000Z,
+    COAId: '28',
+    COA: '50200001',
+    Narration: 'Supplier. Home button',
+    Debit: 500,
+    Credit: 0,
+    IsPosted: true,
+    IsAppove: true,
+    IsOpening: false,
+    InsertDate: 2026-02-17T12:26:23.963Z,
+    InsertUserId: 1,
+    UpdateDate: null,
+    UpdateUserId: null,
+    DeleteDate: null,
+    DeleteUserId: null,
+    IsActive: 1,
+    FYId: 1
+  }
+]
+[2026-02-17T12:26:30.942Z] --- STEP 2: UPDATE PURCHASE (Full Pay: 1180) ---
+[2026-02-17T12:26:36.382Z] ADD RESPONSE 200
+{ message: 'Purchase updated successfully' }
+[2026-02-17T12:26:36.383Z] --- STEP 3: VERIFY FINAL TRANSACTIONS ---
+[2026-02-17T12:26:37.410Z] Final Transaction Count: 8

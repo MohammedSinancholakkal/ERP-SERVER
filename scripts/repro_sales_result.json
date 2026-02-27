@@ -1,0 +1,186 @@
+{
+  "SaleId": 75,
+  "VNo": "20260217140613553",
+  "Transactions": [
+    {
+      "Id": "763",
+      "VNo": "20260217140613553",
+      "VType": "RECEIPT",
+      "COA": "10200002",
+      "Debit": 0,
+      "Credit": 1180,
+      "Narration": "Customer credit for Paid Amount (Payment Updated) For Invoice No. 20260217140613553 Customer: Home"
+    },
+    {
+      "Id": "762",
+      "VNo": "20260217140613553",
+      "VType": "RECEIPT",
+      "COA": "10102",
+      "Debit": 1180,
+      "Credit": 0,
+      "Narration": "Cash at Bank in Sale (Payment Updated) for Invoice No. 20260217140613553 Customer: Home"
+    },
+    {
+      "Id": "761",
+      "VNo": "20260217140613553",
+      "VType": "SALES",
+      "COA": "5010201",
+      "Debit": 0,
+      "Credit": 180,
+      "Narration": "Tax Credit For Invoice No. 20260217140613553"
+    },
+    {
+      "Id": "760",
+      "VNo": "20260217140613553",
+      "VType": "SALES",
+      "COA": "3010001",
+      "Debit": 0,
+      "Credit": 1000,
+      "Narration": "Sales Credit For Invoice No. 20260217140613553"
+    },
+    {
+      "Id": "759",
+      "VNo": "20260217140613553",
+      "VType": "SALES",
+      "COA": "10200002",
+      "Debit": 1180,
+      "Credit": 0,
+      "Narration": "Customer Debit For Invoice No. 20260217140613553"
+    },
+    {
+      "Id": "758",
+      "VNo": "20260217140613553",
+      "VType": "SALES",
+      "COA": "1020010",
+      "Debit": 0,
+      "Credit": 1000,
+      "Narration": "Inventory credit For Invoice No. 20260217140613553"
+    },
+    {
+      "Id": "753",
+      "VNo": "20260217140437857",
+      "VType": "SALES",
+      "COA": "5010201",
+      "Debit": 0,
+      "Credit": 180,
+      "Narration": "Tax Credit For Invoice No. 20260217140437857"
+    },
+    {
+      "Id": "752",
+      "VNo": "20260217140437857",
+      "VType": "SALES",
+      "COA": "3010001",
+      "Debit": 0,
+      "Credit": 1000,
+      "Narration": "Sales Credit For Invoice No. 20260217140437857"
+    },
+    {
+      "Id": "751",
+      "VNo": "20260217140437857",
+      "VType": "SALES",
+      "COA": "10200002",
+      "Debit": 1180,
+      "Credit": 0,
+      "Narration": "Customer Debit For Invoice No. 20260217140437857"
+    },
+    {
+      "Id": "750",
+      "VNo": "20260217140437857",
+      "VType": "SALES",
+      "COA": "1020010",
+      "Debit": 0,
+      "Credit": 1000,
+      "Narration": "Inventory credit For Invoice No. 20260217140437857"
+    },
+    {
+      "Id": "745",
+      "VNo": "INV-00051",
+      "VType": "SALES",
+      "COA": "5010201",
+      "Debit": 0,
+      "Credit": 3600,
+      "Narration": "Tax Credit For Invoice No. INV-00051"
+    },
+    {
+      "Id": "744",
+      "VNo": "INV-00051",
+      "VType": "SALES",
+      "COA": "3010001",
+      "Debit": 0,
+      "Credit": 20000,
+      "Narration": "Sales Credit For Invoice No. INV-00051"
+    },
+    {
+      "Id": "743",
+      "VNo": "INV-00051",
+      "VType": "SALES",
+      "COA": "10200023",
+      "Debit": 23600,
+      "Credit": 0,
+      "Narration": "Customer Debit For Invoice No. INV-00051"
+    },
+    {
+      "Id": "742",
+      "VNo": "INV-00051",
+      "VType": "SALES",
+      "COA": "1020010",
+      "Debit": 0,
+      "Credit": 20000,
+      "Narration": "Inventory credit For Invoice No. INV-00051"
+    },
+    {
+      "Id": "735",
+      "VNo": "INV-00050",
+      "VType": "SALES",
+      "COA": "5010201",
+      "Debit": 0,
+      "Credit": 540,
+      "Narration": "Tax Credit For Invoice No. INV-00050"
+    },
+    {
+      "Id": "734",
+      "VNo": "INV-00050",
+      "VType": "SALES",
+      "COA": "3010001",
+      "Debit": 0,
+      "Credit": 3000,
+      "Narration": "Sales Credit For Invoice No. INV-00050"
+    },
+    {
+      "Id": "733",
+      "VNo": "INV-00050",
+      "VType": "SALES",
+      "COA": "10200023",
+      "Debit": 3540,
+      "Credit": 0,
+      "Narration": "Customer Debit For Invoice No. INV-00050"
+    },
+    {
+      "Id": "732",
+      "VNo": "INV-00050",
+      "VType": "SALES",
+      "COA": "1020010",
+      "Debit": 0,
+      "Credit": 3000,
+      "Narration": "Inventory credit For Invoice No. INV-00050"
+    },
+    {
+      "Id": "725",
+      "VNo": "20260217132715712",
+      "VType": "SALES",
+      "COA": "5010201",
+      "Debit": 0,
+      "Credit": 180,
+      "Narration": "Tax Credit For Invoice No. 20260217132715712"
+    },
+    {
+      "Id": "724",
+      "VNo": "20260217132715712",
+      "VType": "SALES",
+      "COA": "3010001",
+      "Debit": 0,
+      "Credit": 1000,
+      "Narration": "Sales Credit For Invoice No. 20260217132715712"
+    }
+  ]
+}

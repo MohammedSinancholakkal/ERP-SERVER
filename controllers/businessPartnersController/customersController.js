@@ -477,14 +477,16 @@ exports.restoreCustomer = async (req, res) => {
 // =============================================================
 exports.getCustomerReceivables = async (req, res) => {
     try {
-        // Query to get Total Debit (Receivable) and Total Credit (Received) from Transactions for each Customer's COA
-        // We join Customers with Transactions on COAId
-        
-        // Note: In our system:
-        // Debit to Customer Account = Receivable (Invoice created)
-        // Credit to Customer Account = Received (Payment made)
-        
-        const result = await sql.query`
+        const sortBy = req.query.sortBy || "name";
+        const order = (req.query.order || "ASC").toUpperCase();
+
+        let sortColumn = "C.Name";
+        if (sortBy === "name") sortColumn = "C.Name";
+        else if (sortBy === "receivable") sortColumn = "ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0)";
+        else if (sortBy === "received") sortColumn = "ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0)";
+        else if (sortBy === "balance") sortColumn = "(ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) - ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0))";
+
+        const query = `
             SELECT 
                 C.Id AS id,
                 C.Name AS name,
@@ -500,8 +502,10 @@ exports.getCustomerReceivables = async (req, res) => {
             GROUP BY C.Id, C.Name, C.Phone, C.COAId
             HAVING (ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END), 0) > 0 
                  OR ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END), 0) > 0)
-            ORDER BY C.Name ASC
+            ORDER BY ${sortColumn} ${order}
         `;
+
+        const result = await sql.query(query);
 
         res.status(200).json(result.recordset);
 

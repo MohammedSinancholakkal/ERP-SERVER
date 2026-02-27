@@ -9,90 +9,56 @@ exports.getAllDebitVouchers = async (req, res) => {
     const search = req.query.search || '';
     const pool = await sql.connect();
 
-    // Base query for DebitVouchers
-    let dvQuery = `
+    // Query Transactions directly to show individual lines
+    // Filter strictly for VType = 'DV' to avoid showing Purchases
+    let query = `
       SELECT 
-        Id,
-        VNo,
-        VType,
-        Date,
-        CreditAccountHead,
-        Account,
-        Amount,
-        Remark,
-        IsActive
-      FROM DebitVouchers
-      WHERE 1=1
-    `;
-
-    if (!showInactive) {
-        dvQuery += ` AND IsActive = 1`;
-    }
-
-    if (search) {
-        dvQuery += ` AND (
-            VNo LIKE '%${search}%' OR 
-            VType LIKE '%${search}%' OR 
-            CreditAccountHead LIKE '%${search}%' OR 
-            Account LIKE '%${search}%' OR 
-            Remark LIKE '%${search}%'
-        )`;
-    }
-
-    // Secondary query for Transactions (Purchase - Company Credit)
-    // Mapping keys to match DebitVouchers structure EXACTLY
-    // DebitVouchers has: Id, VNo, VType, Date, CreditAccountHead, Account, Amount, Remark, IsActive
-    // Transactions mapping:
-    // VDate -> Date
-    // COA -> CreditAccountHead
-    // Narration -> Account (Use Narration as Account Name)
-    // Debit -> Amount 
-    // Narration -> Remark
-    
-    let transQuery = `
-      SELECT
-        t.Id,
-        t.VNo,
-        t.VType,
-        t.VDate AS Date,
-        '402' AS CreditAccountHead,
-        'Product Purchase' AS Account,
-        ISNULL(p.NetTotal, 0) AS Amount,
-        t.Narration AS Remark,
-        t.IsActive
+        t.Id AS id,
+        t.VNo AS vno,
+        t.VType AS vtype,
+        t.VDate AS date,
+        t.COA AS account, -- This holds the HeadCode
+        t.Narration AS remark,
+        t.Debit AS debit,
+        t.Credit AS credit,
+        t.IsActive AS isActive
       FROM Transactions t
-      LEFT JOIN Purchases p ON t.VNo = p.VNo AND p.IsActive = 1
-      WHERE t.VType = 'Purchase' 
-      AND t.Narration LIKE 'Supplier.%'
-      AND t.Credit > 0
+      WHERE t.VType = 'DV'
     `;
 
     if (!showInactive) {
-        transQuery += ` AND t.IsActive = 1`;
+        query += ` AND t.IsActive = 1`;
     }
 
     if (search) {
-        transQuery += ` AND (
+        query += ` AND (
             t.VNo LIKE '%${search}%' OR 
+            t.VType LIKE '%${search}%' OR 
             t.COA LIKE '%${search}%' OR 
             t.Narration LIKE '%${search}%'
         )`;
     }
 
-    // Combine with UNION ALL
-    // Force alias on final result
-    const finalQuery = `
-      SELECT * FROM (
-          ${dvQuery}
-          UNION ALL
-          ${transQuery}
-      ) AS Unified
-      ORDER BY Date DESC, Id DESC
-    `;
-    
-    // console.log("Executing DebitVoucher Query:", finalQuery); 
+    let orderBy = 'ORDER BY date DESC, id DESC';
+    if (req.query.sortBy && req.query.order) {
+        const sortMap = {
+            'id': 'id',
+            'vno': 'vno',
+            'vtype': 'vtype',
+            'date': 'date',
+            'account': 'account',
+            'remark': 'remark',
+            'debit': 'debit',
+            'credit': 'credit'
+        };
+        const sortCol = sortMap[req.query.sortBy] || 'date';
+        const sortDir = req.query.order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        orderBy = `ORDER BY ${sortCol} ${sortDir}`;
+    }
 
-    const result = await pool.request().query(finalQuery);
+    query += ` ${orderBy}`;
+
+    const result = await pool.request().query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     console.error("GET DEBIT VOUCHERS ERROR:", error);
@@ -144,23 +110,59 @@ exports.addDebitVoucher = async (req, res) => {
         const vNo = `${yyyy}${mm}${dd}${hh}${min}${ss}${ms}`;
         const vType = "DV"; // Short code style like CV
 
+        // FYId Lookup
+        let fyId = 1; // Default
+        const fyRes = await pool.request()
+            .input('chkDate', sql.DateTime, date)
+            .query("SELECT TOP 1 Id FROM FinancialYear WHERE @chkDate BETWEEN FromDate AND ToDate");
+        
+        if (fyRes.recordset.length > 0) {
+            fyId = fyRes.recordset[0].Id;
+        } else {
+             // Fallback to active
+             const activeFy = await pool.request().query("SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1");
+             if(activeFy.recordset.length > 0) fyId = activeFy.recordset[0].Id;
+        }
+
         await pool.request()
             .input("VNo", sql.NVarChar, vNo)
             .input("VType", sql.NVarChar, vType)
             .input("Date", sql.DateTime, date)
-            .input("VType", sql.NVarChar, vType)
-            .input("Date", sql.DateTime, date)
             .input("CreditAccountHead", sql.NVarChar, finalCreditHead)
-            .input("Account", sql.NVarChar, account)
             .input("Account", sql.NVarChar, account)
             .input("Amount", sql.Decimal(18, 2), amount)
             .input("Remark", sql.NVarChar, remark)
             .input("InsertUserId", sql.Int, userId)
+            .input("FYId", sql.Int, fyId)
             .query`
                 INSERT INTO DebitVouchers 
                 (VNo, VType, Date, CreditAccountHead, Account, Amount, Remark, InsertUserId, InsertDate, IsActive)
                 VALUES 
-                (@VNo, @VType, @Date, @CreditAccountHead, @Account, @Amount, @Remark, @InsertUserId, GETDATE(), 1)
+                (@VNo, @VType, @Date, @CreditAccountHead, @Account, @Amount, @Remark, @InsertUserId, GETDATE(), 1);
+
+                -- Lookup COAIds and HeadCodes
+                DECLARE @CreditCOAId INT;
+                DECLARE @CreditHeadCode NVARCHAR(50);
+                SELECT @CreditCOAId = Id, @CreditHeadCode = HeadCode FROM Accounts WHERE HeadName = @CreditAccountHead;
+
+                DECLARE @DebitCOAId INT;
+                DECLARE @DebitHeadCode NVARCHAR(50);
+                SELECT @DebitCOAId = Id, @DebitHeadCode = HeadCode FROM Accounts WHERE HeadName = @Account;
+
+                -- 1. Credit Entry (Source of Funds - e.g. Cash/Bank)
+                -- Only insert if COAId exists to avoid FK errors/NULL errors
+                IF @CreditCOAId IS NOT NULL
+                BEGIN
+                    INSERT INTO Transactions (VNo, VType, VDate, COA, COAId, Narration, Debit, Credit, InsertUserId, InsertDate, IsActive, FYId)
+                    VALUES (@VNo, @VType, @Date, @CreditHeadCode, @CreditCOAId, 'Debit voucher from ' + @CreditAccountHead, 0, @Amount, @InsertUserId, GETDATE(), 1, @FYId);
+                END
+
+                -- 2. Debit Entry (Destination - e.g. Expense/Party)
+                IF @DebitCOAId IS NOT NULL
+                BEGIN
+                    INSERT INTO Transactions (VNo, VType, VDate, COA, COAId, Narration, Debit, Credit, InsertUserId, InsertDate, IsActive, FYId)
+                    VALUES (@VNo, @VType, @Date, @DebitHeadCode, @DebitCOAId, @Remark, @Amount, 0, @InsertUserId, GETDATE(), 1, @FYId);
+                END
             `;
 
         res.status(201).json({ message: "Debit Voucher created successfully", vNo });
@@ -180,6 +182,20 @@ exports.updateDebitVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        // FYId Lookup
+        let fyId = 1; // Default
+        const fyRes = await pool.request()
+            .input('chkDate', sql.DateTime, date)
+            .query("SELECT TOP 1 Id FROM FinancialYear WHERE @chkDate BETWEEN FromDate AND ToDate");
+        
+        if (fyRes.recordset.length > 0) {
+            fyId = fyRes.recordset[0].Id;
+        } else {
+             // Fallback to active
+             const activeFy = await pool.request().query("SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1");
+             if(activeFy.recordset.length > 0) fyId = activeFy.recordset[0].Id;
+        }
+        
         await pool.request()
             .input("Id", sql.Int, id)
             .input("Date", sql.DateTime, date)
@@ -188,6 +204,7 @@ exports.updateDebitVoucher = async (req, res) => {
             .input("Amount", sql.Decimal(18, 2), amount)
             .input("Remark", sql.NVarChar, remark)
             .input("UpdateUserId", sql.Int, userId)
+            .input("FYId", sql.Int, fyId)
             .query`
                 UPDATE DebitVouchers
                 SET 
@@ -198,7 +215,38 @@ exports.updateDebitVoucher = async (req, res) => {
                     Remark = @Remark,
                     UpdateUserId = @UpdateUserId,
                     UpdateDate = GETDATE()
-                WHERE Id = @Id
+                WHERE Id = @Id;
+
+                -- Update Transactions too (Delete old and re-insert is safest, but here we update if VNo matches)
+                -- Actually, since we don't have VNo pending in update request, we need to fetch it or rely on cascade/trigger (unlikely)
+                -- Better approach: Get VNo from DebitVouchers first
+                DECLARE @ExistingVNo NVARCHAR(50);
+                SELECT @ExistingVNo = VNo FROM DebitVouchers WHERE Id = @Id;
+
+                -- Delete existing transactions for this voucher
+                DELETE FROM Transactions WHERE VNo = @ExistingVNo AND VType = 'DV';
+
+                -- Lookup COAIds for Update
+                DECLARE @CreditCOAIdUpd INT;
+                SELECT @CreditCOAIdUpd = Id FROM Accounts WHERE HeadName = @CreditAccountHead;
+
+                DECLARE @DebitCOAIdUpd INT;
+                SELECT @DebitCOAIdUpd = Id FROM Accounts WHERE HeadName = @Account;
+
+                -- Re-insert Transactions
+                -- 1. Credit Entry
+                IF @CreditCOAIdUpd IS NOT NULL
+                BEGIN
+                    INSERT INTO Transactions (VNo, VType, VDate, COA, COAId, Narration, Debit, Credit, InsertUserId, InsertDate, IsActive, FYId)
+                    VALUES (@ExistingVNo, 'DV', @Date, @CreditAccountHead, @CreditCOAIdUpd, 'Debit voucher from ' + @CreditAccountHead, 0, @Amount, @UpdateUserId, GETDATE(), 1, @FYId);
+                END
+
+                -- 2. Debit Entry
+                IF @DebitCOAIdUpd IS NOT NULL
+                BEGIN
+                    INSERT INTO Transactions (VNo, VType, VDate, COA, COAId, Narration, Debit, Credit, InsertUserId, InsertDate, IsActive, FYId)
+                    VALUES (@ExistingVNo, 'DV', @Date, @Account, @DebitCOAIdUpd, @Remark, @Amount, 0, @UpdateUserId, GETDATE(), 1, @FYId);
+                END
             `;
 
         res.status(200).json({ message: "Debit Voucher updated successfully" });
@@ -227,7 +275,14 @@ exports.deleteDebitVoucher = async (req, res) => {
                     IsActive = 0,
                     DeleteUserId = @DeleteUserId,
                     DeleteDate = GETDATE()
-                WHERE Id = @Id
+                WHERE Id = @Id;
+
+                DECLARE @ExistingVNoDel NVARCHAR(50);
+                SELECT @ExistingVNoDel = VNo FROM DebitVouchers WHERE Id = @Id;
+
+                UPDATE Transactions
+                SET IsActive = 0, DeleteUserId = @DeleteUserId, DeleteDate = GETDATE()
+                WHERE VNo = @ExistingVNoDel AND VType = 'DV';
             `;
 
         res.status(200).json({ message: "Debit Voucher deleted successfully" });
@@ -256,7 +311,14 @@ exports.restoreDebitVoucher = async (req, res) => {
                     IsActive = 1,
                     UpdateUserId = @UpdateUserId,
                     UpdateDate = GETDATE()
-                WHERE Id = @Id
+                WHERE Id = @Id;
+
+                DECLARE @ExistingVNoRes NVARCHAR(50);
+                SELECT @ExistingVNoRes = VNo FROM DebitVouchers WHERE Id = @Id;
+
+                UPDATE Transactions
+                SET IsActive = 1, UpdateUserId = @UpdateUserId, UpdateDate = GETDATE()
+                WHERE VNo = @ExistingVNoRes AND VType = 'DV';
             `;
 
         res.status(200).json({ message: "Debit Voucher restored successfully" });
