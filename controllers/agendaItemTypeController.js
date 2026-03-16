@@ -2,18 +2,18 @@ const sql = require("../db/dbConfig");
 
 // ================================
 // GET ALL AGENDA ITEM TYPES
-// ================================
+// ================================  
 exports.getAllAgendaItemTypes = async (req, res) => {
   try {
     // Pagination inputs       
-    let page = parseInt(req.query.page) || 1;
+    let page = parseInt(req.query.page) || 1;   
     let limit = parseInt(req.query.limit) || 25;    
     let offset = (page - 1) * limit;
 
     // Count total active records
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
-      FROM AgendaItemTypes
+      FROM AgendaItemTypes 
       WHERE IsActive = 1
     `;
 
@@ -186,6 +186,13 @@ exports.restoreAgendaItemType = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT Name FROM AgendaItemTypes WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Name } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT Id FROM AgendaItemTypes WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
+
     await sql.query`
       UPDATE AgendaItemTypes
       SET 

@@ -211,6 +211,20 @@ exports.restoreRole = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // --- Duplicate Check Start ---
+    const targetResult = await sql.query`SELECT RoleName FROM Roles WHERE RoleId = ${id}`;
+    if (targetResult.recordset.length > 0) {
+      const targetName = targetResult.recordset[0].RoleName;
+      const duplicateCheck = await sql.query`
+        SELECT RoleId FROM Roles 
+        WHERE RoleName = ${targetName} AND IsActive = 1
+      `;
+      if (duplicateCheck.recordset.length > 0) {
+        return res.status(409).json({ message: "An active role with this name already exists. Cannot restore." });
+      }
+    }
+    // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Roles
       SET 

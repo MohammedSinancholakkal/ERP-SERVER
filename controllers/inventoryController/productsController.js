@@ -413,6 +413,26 @@ exports.restoreProduct = async (req, res) => {
     const { id } = req.params;
     const { userId } = req.body;
 
+    // Get the product details to be restored
+    const itemToRestore = await sql.query`SELECT ProductName, Barcode, SN FROM Products WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { ProductName, Barcode, SN } = itemToRestore.recordset[0];
+
+    // Check for active duplicates
+    const checkDup = await sql.query`
+      SELECT Id FROM Products 
+      WHERE IsActive = 1 
+      AND (
+        (ProductName IS NOT NULL AND LOWER(ProductName) = LOWER(${ProductName ? ProductName.trim() : null})) OR
+        (Barcode IS NOT NULL AND Barcode != '' AND LOWER(Barcode) = LOWER(${Barcode ? Barcode.trim() : null})) OR
+        (SN IS NOT NULL AND SN != '' AND LOWER(SN) = LOWER(${SN ? SN.trim() : null}))
+      )
+    `;
+
+    if (checkDup.recordset.length > 0) {
+      return res.status(409).json({ message: "Cannot restore. An active product with this Name, Barcode, or SN already exists." });
+    }
+
     await sql.query`
       UPDATE Products
       SET 

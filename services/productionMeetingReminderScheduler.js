@@ -45,6 +45,22 @@ const convertUTCToIST = (utcDate) => {
 };
 
 /**
+ * Handle "Face Value UTC" conversion (as used in meetingsController.js)
+ * @param {Date} date - Date object to convert
+ * @returns {Date} - "Face Value" date where IST time components are treated as UTC
+ */
+const dateToFaceValueUTC = (date) => {
+  if (!date) return null;
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  const hours = date.getHours();
+  const minutes = date.getMinutes();
+  const seconds = date.getSeconds();
+  return new Date(Date.UTC(year, month, day, hours, minutes, seconds));
+};
+
+/**
  * Format date for email display
  * @param {Date} istDate - Date in IST timezone
  * @returns {string} - Formatted as "22-Jan-2026 03:30 PM"
@@ -59,7 +75,7 @@ const formatDateIST = (istDate) => {
     hour: '2-digit',
     minute: '2-digit',
     hour12: true,
-    timeZone: 'Asia/Kolkata'
+    timeZone: 'UTC'
   };
   
   return istDate.toLocaleDateString('en-IN', options);
@@ -105,7 +121,7 @@ const generateReminderEmailHTML = (meeting) => {
       minute: '2-digit',
       second: '2-digit',
       hour12: true,
-      timeZone: 'Asia/Kolkata'
+      timeZone: 'UTC'
     };
     
     displayTime = new Intl.DateTimeFormat('en-IN', options).format(dateObj);
@@ -226,15 +242,19 @@ const getRemiderEligibleMeetings = async () => {
     const request = new sql.Request();
     
     // Calculate time window - Need to work with LOCAL TIME since meetings are stored in local time
+    // Actually, meetings are stored in "Face Value UTC" where 12:50 IST is stored as 12:50 UTC.
     const now = new Date();
     const fourMinutesFromNow = new Date(now.getTime() + 4 * 60 * 1000);
     const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
     
-    // Convert to database datetime format (local time that matches Meetings table)
-    const param4Min = fourMinutesFromNow.toISOString().slice(0, 19).replace('T', ' ');
-    const param5Min = fiveMinutesFromNow.toISOString().slice(0, 19).replace('T', ' ');
+    // Convert current local window to "Face Value UTC" to match database storage
+    const faceValue4Min = dateToFaceValueUTC(fourMinutesFromNow);
+    const faceValue5Min = dateToFaceValueUTC(fiveMinutesFromNow);
     
-    logger.debug(`⏰ Checking for reminders - 4min: ${param4Min}, 5min: ${param5Min}`);
+    logger.debug(`⏰ Checking for reminders (Local): ${fourMinutesFromNow.toLocaleTimeString()} - ${fiveMinutesFromNow.toLocaleTimeString()}`);
+    logger.debug(`⏰ Query window (FaceValue UTC): ${faceValue4Min.toISOString()} - ${faceValue5Min.toISOString()}`);
+
+
     
     const query = `
       SELECT 
@@ -266,8 +286,8 @@ const getRemiderEligibleMeetings = async () => {
       ORDER BY m.[StartDate] ASC
     `;
     
-    request.input('fourMinutesFromNow', sql.DateTime, fourMinutesFromNow);
-    request.input('fiveMinutesFromNow', sql.DateTime, fiveMinutesFromNow);
+    request.input('fourMinutesFromNow', sql.DateTime, faceValue4Min);
+    request.input('fiveMinutesFromNow', sql.DateTime, faceValue5Min);
     
     const result = await request.query(query);
     logger.debug(`Found ${result.recordset?.length || 0} meetings eligible for reminder`);
@@ -544,5 +564,6 @@ module.exports = {
   generateReminderEmailHTML,
   getRemiderEligibleMeetings,
   sendMeetingReminder,
-  recordReminderInDatabase
+  recordReminderInDatabase,
+  dateToFaceValueUTC
 };

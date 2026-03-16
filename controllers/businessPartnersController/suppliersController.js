@@ -431,6 +431,35 @@ exports.restoreSupplier = async (req, res) => {
   const { userId } = req.body;                  
 
   try {
+    const itemToRestore = await sql.query`SELECT CompanyName, Phone, Email, PAN, GSTIN FROM Suppliers WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { CompanyName, Phone, Email, PAN, GSTIN } = itemToRestore.recordset[0];
+
+    let duplicateField = null;
+
+    if (CompanyName) {
+        const checkName = await sql.query`SELECT Id FROM Suppliers WHERE LOWER(CompanyName) = LOWER(${CompanyName.trim()}) AND IsActive = 1`;
+        if (checkName.recordset.length > 0) duplicateField = "Company Name";
+    }
+    if (!duplicateField && Phone) {
+        const checkPhone = await sql.query`SELECT Id FROM Suppliers WHERE Phone = ${Phone} AND IsActive = 1`;
+        if (checkPhone.recordset.length > 0) duplicateField = "Phone Number";
+    }
+    if (!duplicateField && Email) {
+        const checkEmail = await sql.query`SELECT Id FROM Suppliers WHERE LOWER(Email) = LOWER(${Email.trim()}) AND IsActive = 1`;
+        if (checkEmail.recordset.length > 0) duplicateField = "Email";
+    }
+    if (!duplicateField && PAN) {
+        const checkPan = await sql.query`SELECT Id FROM Suppliers WHERE LOWER(PAN) = LOWER(${PAN.trim()}) AND IsActive = 1`;
+        if (checkPan.recordset.length > 0) duplicateField = "PAN";
+    }
+    if (!duplicateField && GSTIN) {
+        const checkGstin = await sql.query`SELECT Id FROM Suppliers WHERE LOWER(GSTIN) = LOWER(${GSTIN.trim()}) AND IsActive = 1`;
+        if (checkGstin.recordset.length > 0) duplicateField = "GSTIN";
+    }
+
+    if (duplicateField) return res.status(409).json({ message: `Cannot restore. An active supplier with this ${duplicateField} already exists.` });
+
     await sql.query`
       UPDATE Suppliers
       SET
@@ -490,4 +519,99 @@ exports.getSupplierPayables = async (req, res) => {
         res.status(500).json({ message: "Error loading payables report" });
     }
 };
- 
+
+// =============================================================
+// GET SUPPLIER PAYABLES DETAILED
+// =============================================================
+exports.getSupplierPayablesDetailed = async (req, res) => {
+    try {
+        const sortBy = req.query.sortBy || "companyName";
+        const order = (req.query.order || "ASC").toUpperCase();
+
+        let sortColumn = "S.CompanyName";
+        if (sortBy === "companyName") sortColumn = "S.CompanyName";
+
+        // Query to get grouped supplier balances and their individual transactions
+        const query = `
+            SELECT 
+                S.Id AS supplierId,
+                S.CompanyName AS companyName,
+                S.Phone AS phone,
+                S.COAId,
+                ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END) OVER(PARTITION BY S.Id), 0) AS totalPayable,
+                ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END) OVER(PARTITION BY S.Id), 0) AS totalPaid,
+                (ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END) OVER(PARTITION BY S.Id), 0) - 
+                 ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END) OVER(PARTITION BY S.Id), 0)) AS balance,
+                
+                -- Transaction details
+                T.Id AS transactionId,
+                T.VDate AS transactionDate,
+                T.VType AS transactionType,
+                T.VNo AS referenceNo,
+                (
+                    SELECT TOP 1 acc.HeadName 
+                    FROM Transactions tr 
+                    INNER JOIN Accounts acc ON tr.COAId = acc.Id
+                    WHERE tr.VNo = T.VNo AND tr.VType = T.VType AND tr.COAId != T.COAId
+                        AND acc.HeadName NOT IN ('Inventory', 'Input Tax', 'Duties & Taxes')
+                    ORDER BY 
+                        CASE 
+                            WHEN acc.HeadName LIKE '%Bank%' THEN 1 
+                            WHEN acc.HeadName LIKE '%Cash%' THEN 2 
+                            WHEN acc.HeadName LIKE '%Purchase%' THEN 3
+                            ELSE 4 
+                        END, 
+                        tr.Debit DESC, tr.Credit DESC
+                ) AS accountType,
+                ISNULL(T.Credit, 0) AS amount,
+                ISNULL(T.Debit, 0) AS paid,
+                T.Narration AS description
+            FROM Suppliers S
+            INNER JOIN Transactions T ON S.COAId = T.COAId
+            WHERE S.IsActive = 1
+            ORDER BY ${sortColumn} ${order}, T.VDate ASC, T.Id ASC;
+        `;
+
+        const result = await sql.query(query);
+
+        // Group rows by supplier
+        const suppliersMap = new Map();
+
+        result.recordset.forEach(row => {
+            if (!suppliersMap.has(row.supplierId)) {
+                suppliersMap.set(row.supplierId, {
+                    id: row.supplierId,
+                    companyName: row.companyName,
+                    phone: row.phone,
+                    totalPayable: row.totalPayable,
+                    totalPaid: row.totalPaid,
+                    balance: row.balance,
+                    transactions: []
+                });
+            }
+
+            // Only add valid transactions (excluding rows where no transactions joined, though INNER JOIN prevents that)
+            if (row.transactionId) {
+                suppliersMap.get(row.supplierId).transactions.push({
+                    id: row.transactionId,
+                    date: row.transactionDate,
+                    type: row.paid > 0 ? "Payment" : row.transactionType,
+                    referenceNo: row.referenceNo,
+                    accountType: row.accountType,
+                    amount: row.amount,
+                    paid: row.paid,
+                    description: row.description
+                });
+            }
+        });
+
+        // Convert Map to Array
+        const detailedReport = Array.from(suppliersMap.values());
+
+        res.status(200).json(detailedReport);
+
+    } catch (error) {
+        console.error("GET SUPPLIER PAYABLES DETAILED ERROR:", error);
+        res.status(500).json({ message: "Error loading detailed payables report" });
+    }
+};

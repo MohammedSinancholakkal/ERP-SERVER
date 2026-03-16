@@ -234,6 +234,13 @@ exports.restoreRegion = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT regionName FROM Regions WHERE regionId = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { regionName } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT regionId FROM Regions WHERE LOWER(regionName) = LOWER(${regionName.trim()}) AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active region with this name already exists." });
+
     await sql.query`
       UPDATE Regions
       SET 

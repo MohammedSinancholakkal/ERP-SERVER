@@ -198,6 +198,19 @@ exports.restoreCountry = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // 1. Get the name of the country being restored
+    const countryToRestore = await sql.query`SELECT name FROM Countries WHERE id = ${id}`;
+    if (countryToRestore.recordset.length === 0) {
+      return res.status(404).json({ message: "Country not found" });
+    }
+    const countryName = countryToRestore.recordset[0].name;
+
+    // 2. Check if an active country with this name already exists
+    const checkDuplicate = await sql.query`SELECT id FROM Countries WHERE name = ${countryName} AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) {
+      return res.status(409).json({ message: "Cannot restore. An active country with this name already exists." });
+    }
+
     await sql.query`
       UPDATE Countries
       SET 

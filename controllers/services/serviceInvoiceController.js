@@ -215,6 +215,18 @@ exports.addServiceInvoice = async (req, res) => {
     insertUserId
   } = req.body;
 
+  const safeNumbers = {
+    discount: Number(discount) || 0,
+    totalDiscount: Number(totalDiscount) || 0,
+    shippingCost: Number(shippingCost) || 0,
+    grandTotal: Number(grandTotal) || 0,
+    netTotal: Number(netTotal) || 0,
+    paidAmount: Number(paidAmount) || 0,
+    due: Number(due) || 0,
+    change: Number(change) || 0,
+    totalTax: Number(totalTax) || 0,
+  };
+
   // Robust Payment Account Lookup
   let finalPaymentAccount = paymentAccount;
   try {
@@ -243,9 +255,17 @@ exports.addServiceInvoice = async (req, res) => {
   }
 
   const transaction = new sql.Transaction();
+  const now = new Date();
 
   try {
     await transaction.begin();
+
+    // Generate VNo if missing
+    let finalVNo = vno;
+    if (!finalVNo || finalVNo.trim() === '') {
+        const { generateVNo } = require("../../utils/vnoUtils");
+        finalVNo = generateVNo(now);
+    }
 
     // ---------- MASTER INSERT
     const masterReq = new sql.Request(transaction);
@@ -257,16 +277,18 @@ exports.addServiceInvoice = async (req, res) => {
         TaxTypeId, IgstRate, CgstRate, SgstRate, NoTax,
         GrandTotal, NetTotal,
         PaidAmount, Due, Change, PaymentAccount,
-        Details, VNo, InsertUserId
+        Details, VNo, InsertUserId,
+        InsertDate
       )
       OUTPUT INSERTED.Id
       VALUES (
-        ${customerId}, ${date}, ${userId}, ${employeeId},
-        ${discount}, ${totalDiscount}, ${totalTax}, ${shippingCost},
-        ${taxTypeId}, ${igstRate}, ${cgstRate}, ${sgstRate}, ${noTax},
-        ${grandTotal}, ${netTotal},
-        ${paidAmount}, ${due}, ${change}, ${finalPaymentAccount},
-        ${details}, ${vno}, ${insertUserId}
+        ${customerId || null}, ${date || null}, ${userId || null}, ${employeeId || null},
+        ${safeNumbers.discount}, ${safeNumbers.totalDiscount}, ${safeNumbers.totalTax}, ${safeNumbers.shippingCost},
+        ${taxTypeId || null}, ${igstRate || 0}, ${cgstRate || 0}, ${sgstRate || 0}, ${noTax || 0},
+        ${safeNumbers.grandTotal}, ${safeNumbers.netTotal},
+        ${safeNumbers.paidAmount}, ${safeNumbers.due}, ${safeNumbers.change}, ${finalPaymentAccount || null},
+        ${details || null}, ${finalVNo || null}, ${insertUserId || userId || null},
+        ${now}
       )
     `;
 
@@ -291,15 +313,185 @@ exports.addServiceInvoice = async (req, res) => {
         VALUES (
           ${item.serviceId},
           ${item.serviceName},
-          ${item.description},
-          ${item.quantity},
-          ${item.unitPrice},
-          ${item.discount},
-          ${item.total},
+          ${item.description || null},
+          ${item.quantity || 0},
+          ${item.unitPrice || 0},
+          ${item.discount || 0},
+          ${item.total || 0},
           ${serviceInvoiceId},
-          ${insertUserId}
+          ${insertUserId || userId || null}
         )
       `;
+    }
+
+    // ==============================================================================================
+    // 📢 ACCOUNTING POSTING (CONSOLIDATED 5-ENTRY PATTERN)
+    // ==============================================================================================
+    try {
+        if (safeNumbers.paidAmount > 0) {
+            const accountingService = require("../../services/accountingService");
+
+            // 1. Get Customer details
+            const custRes = await new sql.Request(transaction).query`SELECT COAId, Name FROM Customers WHERE Id = ${customerId}`;
+            const customerCOAId = custRes.recordset[0]?.COAId;
+            const customerName = custRes.recordset[0]?.Name;
+            
+            // Fetch Customer HeadCode
+            let customerHeadCode;
+            if (customerCOAId) {
+                 const chemRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${customerCOAId}`;
+                 customerHeadCode = chemRes.recordset[0]?.HeadCode;
+            }
+
+            if (customerCOAId) {
+             // ---------------------------------------------------------
+             // LOOKUP ALL REQUIRED ACCOUNT HEADS
+             // ---------------------------------------------------------
+             
+             // A. SERVICE INCOME ACCOUNT (Prioritize 'Services')
+             let incomeRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Services' OR HeadName = 'services'`;
+             if (incomeRes.recordset.length === 0) {
+                 incomeRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales Account' OR HeadName = 'Sales'`;
+             }
+             let incomeCOAId = incomeRes.recordset[0]?.Id;
+             let incomeHeadCode = incomeRes.recordset[0]?.HeadCode;
+
+             // B. TAX ACCOUNT
+             let taxCOAId, taxHeadCode;
+             if (safeNumbers.totalTax > 0) {
+                 let taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Output Tax'`;
+                 if (taxRes.recordset.length === 0) {
+                      taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Duties & Taxes'`;
+                 }
+                 taxCOAId = taxRes.recordset[0]?.Id;
+                 taxHeadCode = taxRes.recordset[0]?.HeadCode;
+             }
+
+             // C. BANK / CASH ACCOUNT (For Receipt)
+             let bankCOAId, bankHeadCode;
+             if (safeNumbers.paidAmount > 0) {
+                  if (finalPaymentAccount) {
+                        let bankRes;
+                        let isCompanyBankLookup = false;
+
+                        // 1. PRIORITIZE COMPANY BANK LOOKUP for "Cash at Bank"
+                        if (finalPaymentAccount === 'Cash at Bank' || finalPaymentAccount === 'Bank') {
+                            const companyBankRes = await new sql.Request(transaction).query`
+                                SELECT TOP 1 acc.Id, acc.HeadCode 
+                                FROM Accounts acc 
+                                JOIN Banks b ON acc.BankId = b.Id 
+                                WHERE b.IsCompanyBank = 1 AND b.IsActive = 1 AND acc.IsActive = 1
+                            `;
+                            if (companyBankRes.recordset.length > 0) {
+                                bankRes = companyBankRes;
+                                isCompanyBankLookup = true;
+                            }
+                        }
+
+                        // 2. Standard Lookup
+                        if (!isCompanyBankLookup) {
+                             bankRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName = ${finalPaymentAccount}`;
+                        }
+
+                        bankCOAId = bankRes?.recordset[0]?.Id;
+                        bankHeadCode = bankRes?.recordset[0]?.HeadCode;
+                  }
+                  
+                  // Fallback
+                  if (!bankCOAId) {
+                       const cashRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName = 'Cash In Hand' OR HeadName = 'Cash At Hand'`;
+                       bankCOAId = cashRes.recordset[0]?.Id;
+                       bankHeadCode = cashRes.recordset[0]?.HeadCode;
+                  }
+             }
+
+             // ---------------------------------------------------------
+             // BUILD ENTRIES ARRAY
+             // ---------------------------------------------------------
+             const masterEntries = [];
+
+             // 1. CUSTOMER DEBIT (Receivable Increase - Full Invoice Amount)
+             masterEntries.push({ 
+                 coaId: customerCOAId, 
+                 headCode: customerHeadCode,
+                 debit: safeNumbers.grandTotal, 
+                 credit: 0, 
+                 narration: `Customer debit For Service Invoice No. ${finalVNo} Customer: ${customerName}` 
+             });
+
+             // 2. SERVICE INCOME CREDIT (Revenue Increase)
+             if (incomeCOAId) {
+                 masterEntries.push({ 
+                     coaId: incomeCOAId, 
+                     headCode: incomeHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.netTotal, 
+                     narration: `Service Income For Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+             }
+             
+             // 3. TAX CREDIT (Liability Increase)
+             if (safeNumbers.totalTax > 0 && taxCOAId) {
+                 masterEntries.push({ 
+                     coaId: taxCOAId, 
+                     headCode: taxHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.totalTax, 
+                     narration: `Output Tax For Service Invoice No. ${finalVNo}` 
+                 });
+             }
+
+             // ---------------------------------------------------------
+             // RECORD MASTER TRANSACTION (SERVICES)
+             // ---------------------------------------------------------
+             if (masterEntries.length >= 2) {
+                  await accountingService.recordTransaction({
+                      vNo: finalVNo,
+                      vType: 'SERVICES', 
+                      date: date,
+                      entries: masterEntries,
+                      userId: insertUserId || userId, // Fallback if insertUserId not provided
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
+
+             // 4. CASH/BANK DEBIT (Payment Received) - Receipt VType
+             if (safeNumbers.paidAmount > 0 && bankCOAId) {
+                 const receiptEntries = [];
+
+                 receiptEntries.push({ 
+                     coaId: bankCOAId, 
+                     headCode: bankHeadCode,
+                     debit: safeNumbers.paidAmount, 
+                     credit: 0, 
+                     narration: `Cash at Bank in Service for Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+  
+                 // 5. CUSTOMER CREDIT (Receivable Decrease)
+                 receiptEntries.push({ 
+                     coaId: customerCOAId, 
+                     headCode: customerHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.paidAmount, 
+                     narration: `Customer credit for Paid Amount For Service Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+
+                 await accountingService.recordTransaction({
+                      vNo: finalVNo,
+                      vType: 'Receipt', 
+                      date: date,
+                      entries: receiptEntries,
+                      userId: insertUserId || userId, 
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
+        }
+    }
+} catch (err) {
+        console.error("Accounting Posting Error:", err);
+        throw err;
     }
 
     await transaction.commit();
@@ -344,6 +536,18 @@ exports.updateServiceInvoice = async (req, res) => {
     updateUserId
   } = req.body;
 
+  const safeNumbers = {
+    discount: Number(discount) || 0,
+    totalDiscount: Number(totalDiscount) || 0,
+    shippingCost: Number(shippingCost) || 0,
+    grandTotal: Number(grandTotal) || 0,
+    netTotal: Number(netTotal) || 0,
+    paidAmount: Number(paidAmount) || 0,
+    due: Number(due) || 0,
+    change: Number(change) || 0,
+    totalTax: Number(totalTax) || 0,
+  };
+
   // Robust Payment Account Lookup (For Update)
   let finalPaymentAccount = paymentAccount;
   try {
@@ -367,38 +571,60 @@ exports.updateServiceInvoice = async (req, res) => {
   }
 
   const transaction = new sql.Transaction();
+  const now = new Date();
 
+  // 🛡️ VNo Handling & InvoiceNo Fetching
+  let finalVNo = vno; // From request body
+  let oldVNo = null;  // To store VNo BEFORE update
+  
   try {
     await transaction.begin();
+    
+    // FETCH EXISTING DATA
+    try {
+        const currentRes = await new sql.Request(transaction).query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
+        if (currentRes.recordset.length > 0) {
+            oldVNo = currentRes.recordset[0].VNo;
+        }
+
+        // Logic to handle empty VNo
+        if (!finalVNo || finalVNo.trim() === '') {
+            finalVNo = oldVNo;
+            if (!finalVNo || finalVNo.trim() === '') {
+                const { generateVNo } = require("../../utils/vnoUtils");
+                finalVNo = generateVNo(new Date());
+            }
+        }
+    } catch (e) { console.error("Error fetching old VNo", e); }
 
     // ---------- UPDATE MASTER
     const masterReq = new sql.Request(transaction);
     await masterReq.query`
       UPDATE ServiceInvoices
       SET
-        CustomerId = ${customerId},
-        Date = ${date},
-        UserId = ${userId},
-        EmployeeId = ${employeeId},
-        Discount = ${discount},
-        TotalDiscount = ${totalDiscount},
-        TotalTax = ${totalTax},
-        TaxTypeId = ${taxTypeId},
-        IgstRate = ${igstRate},
-        CgstRate = ${cgstRate},
-        SgstRate = ${sgstRate},
-        NoTax = ${noTax},
-        ShippingCost = ${shippingCost},
-        GrandTotal = ${grandTotal},
-        NetTotal = ${netTotal},
-        PaidAmount = ${paidAmount},
-        Due = ${due},
-        Change = ${change},
-        PaymentAccount = ${finalPaymentAccount},
-        Details = ${details},
-        VNo = ${vno},
+        CustomerId = ${customerId || null},
+        Date = ${date || null},
+        UserId = ${userId || null},
+        EmployeeId = ${employeeId || null},
+        Discount = ${safeNumbers.discount},
+        TotalDiscount = ${safeNumbers.totalDiscount},
+        TotalTax = ${safeNumbers.totalTax},
+        TaxTypeId = ${taxTypeId || null},
+        IgstRate = ${igstRate || 0},
+        CgstRate = ${cgstRate || 0},
+        SgstRate = ${sgstRate || 0},
+        NoTax = ${noTax || 0},
+        ShippingCost = ${safeNumbers.shippingCost},
+        GrandTotal = ${safeNumbers.grandTotal},
+        NetTotal = ${safeNumbers.netTotal},
+        PaidAmount = ${safeNumbers.paidAmount},
+        Due = ${safeNumbers.due},
+        Change = ${safeNumbers.change},
+        PaymentAccount = ${finalPaymentAccount || null},
+        Details = ${details || null},
+        VNo = ${finalVNo || null},
         UpdateDate = GETDATE(),
-        UpdateUserId = ${updateUserId}
+        UpdateUserId = ${updateUserId || userId || null}
       WHERE Id = ${id}
     `;
 
@@ -428,15 +654,166 @@ exports.updateServiceInvoice = async (req, res) => {
         VALUES (
           ${item.serviceId},
           ${item.serviceName},
-          ${item.description},
-          ${item.quantity},
-          ${item.unitPrice},
-          ${item.discount},
-          ${item.total},
+          ${item.description || null},
+          ${item.quantity || 0},
+          ${item.unitPrice || 0},
+          ${item.discount || 0},
+          ${item.total || 0},
           ${id},
-          ${updateUserId}
+          ${updateUserId || userId || null}
         )
       `;
+    }
+
+    // ==============================================================================================
+    // 📢 ACCOUNTING UPDATE (APPEND PAYMENT HISTORY & RE-EVALUATE TOTALS)
+    // ==============================================================================================
+    // Following Pattern: Delete old transactions matching this VNo and recreate
+    try {
+         const accountingService = require("../../services/accountingService");
+         const delTrans = new sql.Request(transaction);
+         const vnoToDelete = oldVNo || finalVNo;
+         await delTrans.query`DELETE FROM Transactions WHERE VNo = ${vnoToDelete} AND (Vtype = 'SERVICES' OR Vtype = 'Receipt')`;
+
+         // 1. Get Customer details
+         const custRes = await new sql.Request(transaction).query`SELECT COAId, Name FROM Customers WHERE Id = ${customerId}`;
+         const customerCOAId = custRes.recordset[0]?.COAId;
+         const customerName = custRes.recordset[0]?.Name;
+         
+         const chemRes = await new sql.Request(transaction).query`SELECT HeadCode FROM Accounts WHERE Id = ${customerCOAId}`;
+         const customerHeadCode = chemRes.recordset[0]?.HeadCode;
+
+         if (safeNumbers.paidAmount > 0 && customerCOAId) {
+             // A. SERVICE INCOME ACCOUNT (Prioritize 'Services')
+             let incomeRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Services' OR HeadName = 'services'`;
+             if (incomeRes.recordset.length === 0) {
+                 incomeRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Sales Account' OR HeadName = 'Sales'`;
+             }
+             let incomeCOAId = incomeRes.recordset[0]?.Id;
+             let incomeHeadCode = incomeRes.recordset[0]?.HeadCode;
+
+             // B. TAX ACCOUNT
+             let taxCOAId, taxHeadCode;
+             if (safeNumbers.totalTax > 0) {
+                 let taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Output Tax'`;
+                 if (taxRes.recordset.length === 0) {
+                      taxRes = await new sql.Request(transaction).query`SELECT Id, HeadCode FROM Accounts WHERE HeadName = 'Duties & Taxes'`;
+                 }
+                 taxCOAId = taxRes.recordset[0]?.Id;
+                 taxHeadCode = taxRes.recordset[0]?.HeadCode;
+             }
+
+             // C. BANK / CASH ACCOUNT (For Receipt)
+             let bankCOAId, bankHeadCode;
+             if (safeNumbers.paidAmount > 0) {
+                  if (finalPaymentAccount) {
+                        let bankRes;
+                        let isCompanyBankLookup = false;
+
+                        if (finalPaymentAccount === 'Cash at Bank' || finalPaymentAccount === 'Bank') {
+                            const companyBankRes = await new sql.Request(transaction).query`
+                                SELECT TOP 1 acc.Id, acc.HeadCode 
+                                FROM Accounts acc 
+                                JOIN Banks b ON acc.BankId = b.Id 
+                                WHERE b.IsCompanyBank = 1 AND b.IsActive = 1 AND acc.IsActive = 1
+                            `;
+                            if (companyBankRes.recordset.length > 0) {
+                                bankRes = companyBankRes;
+                                isCompanyBankLookup = true;
+                            }
+                        }
+
+                        if (!isCompanyBankLookup) {
+                             bankRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName = ${finalPaymentAccount}`;
+                        }
+
+                        bankCOAId = bankRes?.recordset[0]?.Id;
+                        bankHeadCode = bankRes?.recordset[0]?.HeadCode;
+                  }
+                  
+                  if (!bankCOAId) {
+                       const cashRes = await new sql.Request(transaction).query`SELECT TOP 1 Id, HeadCode FROM Accounts WHERE HeadName = 'Cash In Hand' OR HeadName = 'Cash At Hand'`;
+                       bankCOAId = cashRes.recordset[0]?.Id;
+                       bankHeadCode = cashRes.recordset[0]?.HeadCode;
+                  }
+             }
+
+             // RECORD NEW ENTRIES
+             const masterEntries = [];
+
+             masterEntries.push({ 
+                 coaId: customerCOAId, 
+                 headCode: customerHeadCode,
+                 debit: safeNumbers.grandTotal, 
+                 credit: 0, 
+                 narration: `Customer debit For Service Invoice No. ${finalVNo} Customer: ${customerName}` 
+             });
+
+             if (incomeCOAId) {
+                 masterEntries.push({ 
+                     coaId: incomeCOAId, 
+                     headCode: incomeHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.netTotal, 
+                     narration: `Service Income For Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+             }
+             
+             if (safeNumbers.totalTax > 0 && taxCOAId) {
+                 masterEntries.push({ 
+                     coaId: taxCOAId, 
+                     headCode: taxHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.totalTax, 
+                     narration: `Output Tax For Service Invoice No. ${finalVNo}` 
+                 });
+             }
+
+             if (masterEntries.length >= 2) {
+                  await accountingService.recordTransaction({
+                      vNo: finalVNo,
+                      vType: 'SERVICES', 
+                      date: date,
+                      entries: masterEntries,
+                      userId: updateUserId, 
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
+
+             if (safeNumbers.paidAmount > 0 && bankCOAId) {
+                 const receiptEntries = [];
+
+                 receiptEntries.push({ 
+                     coaId: bankCOAId, 
+                     headCode: bankHeadCode,
+                     debit: safeNumbers.paidAmount, 
+                     credit: 0, 
+                     narration: `Cash at Bank in Service for Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+ 
+                 receiptEntries.push({ 
+                     coaId: customerCOAId, 
+                     headCode: customerHeadCode,
+                     debit: 0, 
+                     credit: safeNumbers.paidAmount, 
+                     narration: `Customer credit for Paid Amount For Service Invoice No. ${finalVNo} Customer: ${customerName}` 
+                 });
+
+                 await accountingService.recordTransaction({
+                      vNo: finalVNo,
+                      vType: 'Receipt', 
+                      date: date,
+                      entries: receiptEntries,
+                      userId: updateUserId, 
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
+         }
+    } catch (err) {
+        console.error("Accounting Update Error:", err);
+        throw err;
     }
 
     await transaction.commit();
@@ -457,6 +834,7 @@ exports.deleteServiceInvoice = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // 1. Mark Master as Inactive
     await sql.query`
       UPDATE ServiceInvoices
       SET IsActive = 0,
@@ -465,6 +843,7 @@ exports.deleteServiceInvoice = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    // 2. Mark Details as Inactive
     await sql.query`
       UPDATE ServiceInvoiceDetails
       SET IsActive = 0,
@@ -472,6 +851,22 @@ exports.deleteServiceInvoice = async (req, res) => {
           DeleteUserId = ${userId}
       WHERE ServiceInvoiceId = ${id}
     `;
+
+    // 3. Mark Transactions as Inactive
+    // Get VNo to delete from Transactions
+    const invoiceRes = await sql.query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await sql.query`
+                 UPDATE Transactions 
+                 SET IsActive = 0, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'SERVICES' OR Vtype = 'Receipt')
+             `;
+        }
+    }
 
     res.status(200).json({ message: "Service invoice deleted successfully" });
 
@@ -524,6 +919,7 @@ exports.restoreServiceInvoice = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // 1. Restore Master
     await sql.query`
       UPDATE ServiceInvoices
       SET IsActive = 1,
@@ -532,11 +928,28 @@ exports.restoreServiceInvoice = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    // 2. Restore Details
     await sql.query`
       UPDATE ServiceInvoiceDetails
       SET IsActive = 1
       WHERE ServiceInvoiceId = ${id}
     `;
+
+    // 3. Restore Transactions
+    // Get VNo to restore from Transactions
+    const invoiceRes = await sql.query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await sql.query`
+                 UPDATE Transactions 
+                 SET IsActive = 1, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'SERVICES' OR Vtype = 'Receipt')
+             `;
+        }
+    }
 
     res.status(200).json({ message: "Service invoice restored successfully" });
 

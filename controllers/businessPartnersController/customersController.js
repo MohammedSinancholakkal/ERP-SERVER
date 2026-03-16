@@ -454,6 +454,31 @@ exports.restoreCustomer = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT Phone, Email, PAN, GSTTIN FROM Customers WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Phone, Email, PAN, GSTTIN } = itemToRestore.recordset[0];
+
+    let duplicateField = null;
+
+    if (Phone) {
+        const checkPhone = await sql.query`SELECT Id FROM Customers WHERE Phone = ${Phone} AND IsActive = 1`;
+        if (checkPhone.recordset.length > 0) duplicateField = "Phone Number";
+    }
+    if (!duplicateField && Email) {
+        const checkEmail = await sql.query`SELECT Id FROM Customers WHERE LOWER(Email) = LOWER(${Email.trim()}) AND IsActive = 1`;
+        if (checkEmail.recordset.length > 0) duplicateField = "Email";
+    }
+    if (!duplicateField && PAN) {
+        const checkPan = await sql.query`SELECT Id FROM Customers WHERE LOWER(PAN) = LOWER(${PAN.trim()}) AND IsActive = 1`;
+        if (checkPan.recordset.length > 0) duplicateField = "PAN";
+    }
+    if (!duplicateField && GSTTIN) {
+        const checkGstin = await sql.query`SELECT Id FROM Customers WHERE LOWER(GSTTIN) = LOWER(${GSTTIN.trim()}) AND IsActive = 1`;
+        if (checkGstin.recordset.length > 0) duplicateField = "GSTIN";
+    }
+
+    if (duplicateField) return res.status(409).json({ message: `Cannot restore. An active customer with this ${duplicateField} already exists.` });
+
     await sql.query`
       UPDATE Customers
       SET
@@ -512,5 +537,99 @@ exports.getCustomerReceivables = async (req, res) => {
     } catch (error) {
         console.error("GET CUSTOMER RECEIVABLES ERROR:", error);
         res.status(500).json({ message: "Error loading receivables report" });
+    }
+};
+
+// =============================================================
+// GET CUSTOMER RECEIVABLES DETAILED
+// =============================================================
+exports.getCustomerReceivablesDetailed = async (req, res) => {
+    try {
+        const sortBy = req.query.sortBy || "name";
+        const order = (req.query.order || "ASC").toUpperCase();
+
+        let sortColumn = "C.Name";
+        if (sortBy === "name") sortColumn = "C.Name";
+
+        // Query to get grouped customer balances and their individual transactions
+        const query = `
+            SELECT 
+                C.Id AS customerId,
+                C.Name AS name,
+                C.Phone AS phone,
+                C.COAId,
+                ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END) OVER(PARTITION BY C.Id), 0) AS totalReceivable,
+                ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END) OVER(PARTITION BY C.Id), 0) AS totalReceived,
+                (ISNULL(SUM(CASE WHEN T.Debit > 0 THEN T.Debit ELSE 0 END) OVER(PARTITION BY C.Id), 0) - 
+                 ISNULL(SUM(CASE WHEN T.Credit > 0 THEN T.Credit ELSE 0 END) OVER(PARTITION BY C.Id), 0)) AS balance,
+                
+                -- Transaction details
+                T.Id AS transactionId,
+                T.VDate AS transactionDate,
+                T.VType AS transactionType,
+                T.VNo AS referenceNo,
+                (
+                    SELECT TOP 1 acc.HeadName 
+                    FROM Transactions tr 
+                    INNER JOIN Accounts acc ON tr.COAId = acc.Id
+                    WHERE tr.VNo = T.VNo AND tr.VType = T.VType AND tr.COAId != T.COAId
+                        AND acc.HeadName NOT IN ('Inventory', 'Input Tax', 'Duties & Taxes')
+                    ORDER BY 
+                        CASE 
+                            WHEN acc.HeadName LIKE '%Bank%' THEN 1 
+                            WHEN acc.HeadName LIKE '%Cash%' THEN 2 
+                            WHEN acc.HeadName LIKE '%Sales%' THEN 3
+                            ELSE 4 
+                        END, 
+                        tr.Credit DESC, tr.Debit DESC
+                ) AS accountType,
+                ISNULL(T.Debit, 0) AS receivableAmount,
+                ISNULL(T.Credit, 0) AS receivedAmount,
+                T.Narration AS description
+            FROM Customers C
+            INNER JOIN Transactions T ON C.COAId = T.COAId
+            WHERE C.IsActive = 1
+            ORDER BY ${sortColumn} ${order}, T.VDate ASC, T.Id ASC;
+        `;
+
+        const result = await sql.query(query);
+
+        // Group rows by customer
+        const customersMap = new Map();
+
+        result.recordset.forEach(row => {
+            if (!customersMap.has(row.customerId)) {
+                customersMap.set(row.customerId, {
+                    id: row.customerId,
+                    name: row.name,
+                    phone: row.phone,
+                    receivable: row.totalReceivable,
+                    received: row.totalReceived,
+                    balance: row.balance,
+                    transactions: []
+                });
+            }
+
+            if (row.transactionId) {
+                customersMap.get(row.customerId).transactions.push({
+                    id: row.transactionId,
+                    date: row.transactionDate,
+                    type: row.receivedAmount > 0 ? "Receipt" : row.transactionType,
+                    referenceNo: row.referenceNo,
+                    accountType: row.accountType,
+                    receivable: row.receivableAmount,
+                    received: row.receivedAmount,
+                    description: row.description
+                });
+            }
+        });
+
+        const detailedReport = Array.from(customersMap.values());
+
+        res.status(200).json(detailedReport);
+
+    } catch (error) {
+        console.error("GET CUSTOMER RECEIVABLES DETAILED ERROR:", error);
+        res.status(500).json({ message: "Error loading detailed receivables report" });
     }
 };

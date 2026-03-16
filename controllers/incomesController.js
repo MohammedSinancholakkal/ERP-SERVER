@@ -221,6 +221,13 @@ exports.restoreIncome = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT IncomeName FROM Incomes WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { IncomeName } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT Id FROM Incomes WHERE LOWER(IncomeName) = LOWER(${IncomeName.trim()}) AND IsActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active income with this name already exists." });
+
     await sql.query`
       UPDATE Incomes
       SET 

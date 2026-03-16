@@ -176,6 +176,13 @@ exports.restoreTaxPercentage = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT percentage FROM TaxPercentages WHERE id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { percentage } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT id FROM TaxPercentages WHERE percentage = ${percentage} AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active tax percentage with this value already exists." });
+
     await sql.query`
       UPDATE TaxPercentages
       SET 

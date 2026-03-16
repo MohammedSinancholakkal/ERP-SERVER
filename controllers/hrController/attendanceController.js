@@ -206,6 +206,34 @@ exports.restoreAttendance = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // --- Duplicate Check Start ---
+    const targetResult = await sql.query`SELECT EmployeeId, CheckIn, CheckOut FROM Attendance WHERE Id = ${id}`;
+    if (targetResult.recordset.length > 0) {
+      const target = targetResult.recordset[0];
+      const request = new sql.Request();
+      request.input('EmployeeId', sql.Int, target.EmployeeId);
+      request.input('CheckIn', sql.DateTime, target.CheckIn);
+      
+      if (target.CheckOut) {
+         request.input('CheckOut', sql.DateTime, target.CheckOut);
+      } else {
+         request.input('CheckOut', sql.DateTime, null);
+      }
+
+      const dupCheckQuery = `
+        SELECT Id FROM Attendance 
+        WHERE EmployeeId = @EmployeeId 
+          AND CheckIn = @CheckIn 
+          AND (CheckOut = @CheckOut OR (CheckOut IS NULL AND @CheckOut IS NULL))
+          AND IsActive = 1
+      `;
+      const duplicateCheck = await request.query(dupCheckQuery);
+      if (duplicateCheck.recordset.length > 0) {
+        return res.status(409).json({ message: "An active attendance record for this exact check-in time already exists. Cannot restore." });
+      }
+    }
+    // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Attendance
       SET

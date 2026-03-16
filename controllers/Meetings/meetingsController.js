@@ -1,5 +1,5 @@
 const sql = require("../../db/dbConfig");
-const { formatISTTime } = require("../../utils/dateTime.js");
+const { formatISTTime, formatISTDate, formatISTDateTime } = require("../../utils/dateTime.js");
 
 const istToUTC = (istDateString) => {
   if (!istDateString) return null;
@@ -273,7 +273,9 @@ GETUTCDATE(), ${userIdInt}, 1
                  if (settingsRes.recordset.length > 0 && settingsRes.recordset[0].LogoPath) {
                      // Ensure no leading slashes/backslashes
                      const cleanPath = settingsRes.recordset[0].LogoPath.replace(/^[\/\\]+/, '');
-                     logoUrl = `https://homebutton.in/${cleanPath}`;
+                     // Get base URL from environment or fallback to request host
+                     const baseUrl = process.env.BASE_URL || `https://${req.get('host')}` || 'https://homebutton.in';
+                     logoUrl = `${baseUrl.replace(/\/+$/, '')}/${cleanPath}`;
                  }
             } catch (err) {
                 console.error("Error fetching logo for email:", err);
@@ -329,15 +331,11 @@ GETUTCDATE(), ${userIdInt}, 1
         </div>
         <div class="detail-row">
           <span class="label">Date</span>
-          <span class="value">${formatISTTime(startDate).split(' ')[0]}</span> 
-          <!-- Note: formatISTTime returns time, we might want full date here. 
-               Ideally we use a formatter that shows Date + Time. 
-               For now, trusting formatISTTime or using the raw inputs nicely.
-               Let's rely on formatISTTime if it provides what we need, or better yet: -->
+          <span class="value">${formatISTDate(parsedStartDate)}</span> 
         </div>
         <div class="detail-row">
           <span class="label">Time (IST)</span>
-          <span class="value">${formatISTTime(startDate)} - ${formatISTTime(endDate)}</span>
+          <span class="value">${formatISTTime(parsedStartDate)} - ${formatISTTime(parsedEndDate)}</span>
         </div>
       </div>
 
@@ -550,7 +548,8 @@ UpdateUserId = ${userIdInt}
                 const settingsRes = await sql.query`SELECT TOP 1 LogoPath FROM Settings WHERE IsActive = 1 ORDER BY Id DESC`;
                  if (settingsRes.recordset.length > 0 && settingsRes.recordset[0].LogoPath) {
                      const cleanPath = settingsRes.recordset[0].LogoPath.replace(/^[\/\\]+/, '');
-                     logoUrl = `https://homebutton.in/${cleanPath}`;
+                     const baseUrl = process.env.BASE_URL || `https://${req.get('host')}` || 'https://homebutton.in';
+                     logoUrl = `${baseUrl.replace(/\/+$/, '')}/${cleanPath}`;
                  }
             } catch (err) {
                 console.error("Error fetching logo for email:", err);
@@ -605,8 +604,12 @@ UpdateUserId = ${userIdInt}
           <span class="value">${locationName}</span>
         </div>
         <div class="detail-row">
+          <span class="label">Date</span>
+          <span class="value">${formatISTDate(parsedStartDate)}</span> 
+        </div>
+        <div class="detail-row">
           <span class="label">Time (IST)</span>
-          <span class="value">${formatISTTime(startDate)} - ${formatISTTime(endDate)}</span>
+          <span class="value">${formatISTTime(parsedStartDate)} - ${formatISTTime(parsedEndDate)}</span>
         </div>
       </div>
 
@@ -790,6 +793,13 @@ exports.restoreMeeting = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT MeetingName FROM Meetings WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { MeetingName } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT Id FROM Meetings WHERE LOWER(MeetingName) = LOWER(${MeetingName.trim()}) AND IsActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active meeting with this name already exists." });
+
     await sql.query`
       UPDATE Meetings
       SET

@@ -410,9 +410,24 @@ exports.restorePayroll = async (req, res) => {
   const { userId } = req.body;
 
   try {
+     // --- Duplicate Check Start ---
+     const targetResult = await sql.query`SELECT Number FROM Payroll WHERE Id = ${id}`;
+     if (targetResult.recordset.length > 0) {
+        const targetNumber = targetResult.recordset[0].Number;
+        const duplicateCheck = await sql.query`
+          SELECT Id FROM Payroll 
+          WHERE Number = ${targetNumber} AND IsActive = 1
+        `;
+        if (duplicateCheck.recordset.length > 0) {
+          return res.status(409).json({ message: "An active payroll with this number already exists. Cannot restore." });
+        }
+     }
+     // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Payroll
-      SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
+      SET
+        IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 

@@ -576,6 +576,30 @@ exports.restoreUser = async (req, res) => {
   const { userId } = req.body;
 
   try {
+     // --- Duplicate Check Start ---
+     const targetResult = await sql.query`SELECT username, email FROM Users WHERE userId = ${id}`;
+     if (targetResult.recordset.length > 0) {
+        const target = targetResult.recordset[0];
+        
+        const request = new sql.Request();
+        request.input('username', sql.NVarChar, target.username || '');
+        request.input('email', sql.NVarChar, target.email || '');
+
+        const dupCheckQuery = `
+          SELECT userId FROM Users 
+          WHERE isActive = 1 
+          AND (
+             (username = @username)
+             OR (email IS NOT NULL AND email != '' AND email = @email)
+          )
+        `;
+        const duplicateCheck = await request.query(dupCheckQuery);
+        if (duplicateCheck.recordset.length > 0) {
+          return res.status(409).json({ message: "An active user with this username or email already exists. Cannot restore." });
+        }
+     }
+     // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Users
       SET 

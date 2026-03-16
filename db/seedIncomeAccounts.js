@@ -25,12 +25,13 @@ const seedIncomeAccounts = async () => {
 
     // List of income sources to seed
     const incomes = [
-      { code: '30101', name: 'Service Income' },
-      { code: '30102', name: 'Job Work Income' },
-      { code: '30103', name: 'Commission Income' },
-      { code: '30104', name: 'Interest Received' },
-      { code: '30105', name: 'Scrap Sales' },
-      { code: '30106', name: 'Other income' },
+      { code: '30101', name: 'Services' },
+      { code: '30102', name: 'Service Income' },
+      { code: '30103', name: 'Job Work Income' },
+      { code: '30104', name: 'Commission Income' },
+      { code: '30105', name: 'Interest Received' },
+      { code: '30106', name: 'Scrap Sales' },
+      { code: '30107', name: 'Other income' },
     ];
 
     let successCount = 0;
@@ -59,7 +60,7 @@ const seedIncomeAccounts = async () => {
         request.input('ParentHead', sql.Int, parentId);
         request.input('PHeadName', sql.VarChar(300), 'Income');
         request.input('HeadLevel', sql.Int, 2); // Child level
-        request.input('HeadType', sql.VarChar(50), 'INC');
+        request.input('HeadType', sql.VarChar(50), 'I');
         request.input('IsTransaction', sql.Bit, 1); // Can post transactions
         request.input('IsGL', sql.Bit, 1); // Is General Ledger account
         request.input('IsBudget', sql.Bit, 1); // Can be budgeted

@@ -474,17 +474,44 @@ exports.getInactiveEmployees = async (req, res) => {
 // RESTORE EMPLOYEE
 // ======================================================================
 exports.restoreEmployee = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.body.userId || 1;
+  const { id } = req.params;
+  const { userId } = req.body;
 
-    await sql.query(`
+  try {
+    // --- Duplicate Check Start ---
+    const currentRes = await sql.query`SELECT FirstName, LastName, Phone, Email, BankAccountForPayroll FROM Employees WHERE Id = ${id}`;
+    if (currentRes.recordset.length > 0) {
+       const emp = currentRes.recordset[0];
+       
+       const request = new sql.Request();
+       request.input('FirstName', sql.NVarChar, emp.FirstName || '');
+       request.input('LastName', sql.NVarChar, emp.LastName || '');
+       request.input('Phone', sql.NVarChar, emp.Phone || '');
+       request.input('Email', sql.NVarChar, emp.Email || '');
+       request.input('BankAccountForPayroll', sql.NVarChar, emp.BankAccountForPayroll || '');
+
+       const dupCheckQuery = `
+          SELECT Id FROM Employees 
+          WHERE IsActive = 1 
+          AND (
+             (FirstName = @FirstName AND LastName = @LastName)
+             OR (Phone IS NOT NULL AND Phone != '' AND Phone = @Phone)
+             OR (Email IS NOT NULL AND Email != '' AND Email = @Email)
+             OR (BankAccountForPayroll IS NOT NULL AND BankAccountForPayroll != '' AND BankAccountForPayroll = @BankAccountForPayroll)
+          )
+       `;
+       const dupRes = await request.query(dupCheckQuery);
+       if (dupRes.recordset.length > 0) {
+           return res.status(409).json({ message: "An active employee with the same Name, Phone, Email, or Bank Account already exists. Cannot restore." });
+       }
+    }
+    // --- Duplicate Check End ---
+
+    await sql.query`
       UPDATE Employees
-      SET IsActive = 1,
-          UpdateDate = GETDATE(),
-          UpdateUserId = ${userId}
+      SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
       WHERE Id = ${id}
-    `);
+    `;
 
     res.status(200).json({ message: "Employee restored successfully" });
   } catch (error) {

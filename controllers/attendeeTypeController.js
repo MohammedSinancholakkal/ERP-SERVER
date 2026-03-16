@@ -185,6 +185,13 @@ exports.restoreAttendeeType = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT Name FROM AttendeeTypes WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Name } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT Id FROM AttendeeTypes WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
+
     await sql.query`
       UPDATE AttendeeTypes
       SET 

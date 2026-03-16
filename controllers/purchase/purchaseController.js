@@ -526,8 +526,8 @@ exports.addPurchase = async (req, res) => {
                          vType: 'PURCHASE', // Should be PAYMENT or PURCHASE? unique VNo usually implies separate voucher. 
                          // But if same VNo, maybe PURCHASE type is fine? 
                          // updatePurchase used 'PAYMENT' type for the second transaction. 
-                         // Let's use 'PAYMENT' to be consistent.
-                         vType: 'PURCHASE',
+                         vNo: vno, 
+                         vType: 'Payment',
                          date: date,
                          entries: paymentEntries,
                          userId: userId,
@@ -847,7 +847,7 @@ exports.updatePurchase = async (req, res) => {
 
                  await accountingService.recordTransaction({
                      vNo: paymentVNo, 
-                     vType: 'PURCHASE', // As requested
+                     vType: 'Payment', // As requested
                      date: txnDate,
                      entries: paymentEntries,
                      userId: userId,
@@ -916,6 +916,22 @@ exports.deletePurchase = async (req, res) => {
       SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId}
       WHERE PurchaseId = ${id}
     `;
+
+    // 3. Mark Transactions as Inactive
+    // Get VNo to delete from Transactions
+    const invoiceRes = await new sql.Request(transaction).query`SELECT VNo FROM Purchases WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await new sql.Request(transaction).query`
+                 UPDATE Transactions 
+                 SET IsActive = 0, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'PURCHASE' OR Vtype = 'Payment')
+             `;
+        }
+    }
 
     await transaction.commit();
     res.status(200).json({ message: "Purchase deleted successfully" });
@@ -1012,6 +1028,22 @@ exports.restorePurchase = async (req, res) => {
       SET IsActive = 1
       WHERE PurchaseId = ${id}
     `;
+
+    // 3. Restore Transactions
+    // Get VNo to restore from Transactions
+    const invoiceRes = await new sql.Request(transaction).query`SELECT VNo FROM Purchases WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await new sql.Request(transaction).query`
+                 UPDATE Transactions 
+                 SET IsActive = 1, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'PURCHASE' OR Vtype = 'Payment')
+             `;
+        }
+    }
 
     await transaction.commit();
     res.status(200).json({ message: "Purchase restored successfully" });

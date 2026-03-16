@@ -447,6 +447,26 @@ exports.restoreBank = async (req, res) => {
   const transaction = new sql.Transaction(pool);
 
   try {
+    // 1. Get the BankName and ACNumber of the bank being restored
+    const bankToRestoreRes = await pool.request()
+      .input('id', sql.Int, id)
+      .query(`SELECT BankName, ACNumber FROM Banks WHERE Id = @id`);
+
+    if (bankToRestoreRes.recordset.length === 0) {
+      return res.status(404).json({ message: "Bank not found" });
+    }
+    const { BankName, ACNumber } = bankToRestoreRes.recordset[0];
+
+    // 2. Check if an active bank with this name or account number already exists
+    const checkDuplicateRes = await pool.request()
+      .input('bName', sql.VarChar, BankName)
+      .input('acNum', sql.VarChar, ACNumber)
+      .query(`SELECT Id FROM Banks WHERE (BankName = @bName OR ACNumber = @acNum) AND IsActive = 1`);
+
+    if (checkDuplicateRes.recordset.length > 0) {
+      return res.status(409).json({ message: "Cannot restore. An active bank with this name or account number already exists." });
+    }
+
     await transaction.begin();
 
     // Restore Bank
@@ -481,4 +501,223 @@ exports.restoreBank = async (req, res) => {
     console.error("RESTORE BANK ERROR:", err);
     res.status(500).json({ message: "Server Error" });
   }
+};
+
+/* ----------------------------------------------------------
+   CASH IN HAND REPORT
+---------------------------------------------------------- */
+exports.getCashInHandReport = async (req, res) => {
+    try {
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 25;
+        let offset = (page - 1) * limit;
+
+        const pool = await sql.connect();
+
+        // 1. Find the Cash In Hand account(s), handling potential trailing spaces in the DB
+        const accountRes = await pool.request().query(`
+            SELECT Id FROM Accounts 
+            WHERE (TRIM(HeadName) = 'Cash In Hand' OR TRIM(HeadName) = 'Cash At Hand') AND IsActive = 1
+        `);
+
+        if (accountRes.recordset.length === 0) {
+            return res.status(200).json({ total: 0, records: [], currentBalance: 0 });
+        }
+
+        const accountIds = accountRes.recordset.map(r => r.Id).join(',');
+
+        // Find Active Financial Year
+        const activeFyRes = await pool.request().query("SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1");
+        const fyCondition = activeFyRes.recordset.length > 0 ? `AND FYId = ${activeFyRes.recordset[0].Id}` : "";
+
+        // 2. Count total transactions for Cash In Hand where VType is INV or PURCHASE or their payment equivalents
+        const countQuery = `
+            SELECT COUNT(Id) AS Total
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) 
+            AND VType IN ('INV', 'PURCHASE', 'RECEIPT', 'PAYMENT')
+            AND IsActive = 1
+            ${fyCondition}
+        `;
+        const countRes = await pool.request().query(countQuery);
+        const total = countRes.recordset[0].Total;
+
+        // 3. Fetch paginated transactions
+        // Note: Sort order for reports is usually chronological (oldest to newest or newest to oldest). We'll default to newest first.
+        const sortBy = req.query.sortBy || "VDate";
+        const order = (req.query.order || "DESC").toUpperCase();
+        
+        // Sanitize sortBy
+        let sortColumn = "VDate";
+        if (sortBy === "VDate") sortColumn = "VDate";
+        else if (sortBy === "VNo") sortColumn = "VNo";
+        else if (sortBy === "Debit") sortColumn = "Debit";
+        else if (sortBy === "Credit") sortColumn = "Credit";
+        else sortColumn = "Id";
+
+        const query = `
+            SELECT 
+                Id AS transactionId,
+                VDate AS date,
+                VNo AS referenceNo,
+                VType AS type,
+                Narration AS description,
+                ISNULL(Debit, 0) AS cashIn,
+                ISNULL(Credit, 0) AS cashOut,
+                (
+                    SELECT TOP 1 COALESCE(c.Name, s.CompanyName)
+                    FROM Transactions t2
+                    LEFT JOIN Customers c ON t2.COAId = c.COAId
+                    LEFT JOIN Suppliers s ON t2.COAId = s.COAId
+                    WHERE t2.VNo = Transactions.VNo 
+                      AND (c.Id IS NOT NULL OR s.Id IS NOT NULL)
+                ) AS partyName,
+                (
+                    SELECT STRING_AGG(CAST(pd.ProductName AS VARCHAR(MAX)), ', ')
+                    FROM (
+                        SELECT ProductName FROM SaleDetails sd JOIN Sales sa ON sd.SaleId = sa.Id WHERE sa.VNo = Transactions.VNo
+                        UNION ALL
+                        SELECT ProductName FROM PurchaseDetails pd JOIN Purchases pu ON pd.PurchaseId = pu.Id WHERE pu.VNo = Transactions.VNo
+                    ) pd
+                ) AS productName
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) 
+            AND VType IN ('INV', 'PURCHASE', 'RECEIPT', 'PAYMENT')
+            AND IsActive = 1
+            ${fyCondition}
+            ORDER BY ${sortColumn} ${order}, Id ${order}
+            OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+        `;
+
+        const result = await pool.request().query(query);
+
+        // 4. Calculate Current Balance of Cash In Hand (overall, not paginated) from all active transactions
+        const balanceQuery = `
+            SELECT 
+                ISNULL(SUM(Debit), 0) - ISNULL(SUM(Credit), 0) AS CurrentBalance
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) AND IsActive = 1 ${fyCondition}
+        `;
+        const balanceRes = await pool.request().query(balanceQuery);
+        const currentBalance = balanceRes.recordset[0].CurrentBalance;
+
+        res.status(200).json({
+            total: total,
+            records: result.recordset,
+            currentBalance: currentBalance
+        });
+
+    } catch (err) {
+        console.error("GET CASH IN HAND REPORT ERROR:", err);
+        res.status(500).json({ message: "Server Error while fetching Cash In Hand Report." });
+    }
+};
+
+/* ----------------------------------------------------------
+   CASH AT BANK REPORT
+---------------------------------------------------------- */
+exports.getCashAtBankReport = async (req, res) => {
+    try {
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 25;
+        let offset = (page - 1) * limit;
+
+        const pool = await sql.connect();
+
+        // 1. Find the Cash At Bank account(s)
+        const accountRes = await pool.request().query(`
+            SELECT Id FROM Accounts 
+            WHERE (TRIM(HeadName) = 'Cash At Bank' OR TRIM(PHeadName) = 'Cash At Bank') AND IsActive = 1
+        `);
+
+        if (accountRes.recordset.length === 0) {
+            return res.status(200).json({ total: 0, records: [], currentBalance: 0 });
+        }
+
+        const accountIds = accountRes.recordset.map(r => r.Id).join(',');
+
+        // Find Active Financial Year
+        const activeFyRes = await pool.request().query("SELECT TOP 1 Id FROM FinancialYear WHERE IsActive = 1");
+        const fyCondition = activeFyRes.recordset.length > 0 ? `AND FYId = ${activeFyRes.recordset[0].Id}` : "";
+
+        // 2. Count total transactions for Cash At Bank where VType is INV or PURCHASE or their payment equivalents
+        const countQuery = `
+            SELECT COUNT(Id) AS Total
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) 
+            AND VType IN ('INV', 'PURCHASE', 'RECEIPT', 'PAYMENT', 'CV', 'DV', 'Contra')
+            AND IsActive = 1
+            ${fyCondition}
+        `;
+        const countRes = await pool.request().query(countQuery);
+        const total = countRes.recordset[0].Total;
+
+        // 3. Fetch paginated transactions
+        const sortBy = req.query.sortBy || "VDate";
+        const order = (req.query.order || "DESC").toUpperCase();
+        
+        // Sanitize sortBy
+        let sortColumn = "VDate";
+        if (sortBy === "VDate") sortColumn = "VDate";
+        else if (sortBy === "VNo") sortColumn = "VNo";
+        else if (sortBy === "Debit") sortColumn = "Debit";
+        else if (sortBy === "Credit") sortColumn = "Credit";
+        else sortColumn = "Id";
+
+        const query = `
+            SELECT 
+                Id AS transactionId,
+                VDate AS date,
+                VNo AS referenceNo,
+                VType AS type,
+                Narration AS description,
+                ISNULL(Debit, 0) AS cashIn,
+                ISNULL(Credit, 0) AS cashOut,
+                (
+                    SELECT TOP 1 COALESCE(c.Name, s.CompanyName)
+                    FROM Transactions t2
+                    LEFT JOIN Customers c ON t2.COAId = c.COAId
+                    LEFT JOIN Suppliers s ON t2.COAId = s.COAId
+                    WHERE t2.VNo = Transactions.VNo 
+                      AND (c.Id IS NOT NULL OR s.Id IS NOT NULL)
+                ) AS partyName,
+                (
+                    SELECT STRING_AGG(CAST(pd.ProductName AS VARCHAR(MAX)), ', ')
+                    FROM (
+                        SELECT ProductName FROM SaleDetails sd JOIN Sales sa ON sd.SaleId = sa.Id WHERE sa.VNo = Transactions.VNo
+                        UNION ALL
+                        SELECT ProductName FROM PurchaseDetails pd JOIN Purchases pu ON pd.PurchaseId = pu.Id WHERE pu.VNo = Transactions.VNo
+                    ) pd
+                ) AS productName
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) 
+            AND VType IN ('INV', 'PURCHASE', 'RECEIPT', 'PAYMENT', 'CV', 'DV', 'Contra')
+            AND IsActive = 1
+            ${fyCondition}
+            ORDER BY ${sortColumn} ${order}, Id ${order}
+            OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+        `;
+
+        const result = await pool.request().query(query);
+
+        // 4. Calculate Current Balance of Cash At Bank (overall, not paginated) from all active transactions
+        const balanceQuery = `
+            SELECT 
+                ISNULL(SUM(Debit), 0) - ISNULL(SUM(Credit), 0) AS CurrentBalance
+            FROM Transactions
+            WHERE COAId IN (${accountIds}) AND IsActive = 1 ${fyCondition}
+        `;
+        const balanceRes = await pool.request().query(balanceQuery);
+        const currentBalance = balanceRes.recordset[0].CurrentBalance;
+
+        res.status(200).json({
+            total: total,
+            records: result.recordset,
+            currentBalance: currentBalance
+        });
+
+    } catch (err) {
+        console.error("GET CASH AT BANK REPORT ERROR:", err);
+        res.status(500).json({ message: "Server Error while fetching Cash At Bank Report." });
+    }
 };

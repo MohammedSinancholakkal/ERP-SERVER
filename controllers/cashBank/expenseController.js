@@ -182,6 +182,26 @@ exports.restoreExpense = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // Get the expense details to be restored
+    const itemToRestore = await sql.query`SELECT ExpenseTypeId, Date, Amount, PaymentAccount FROM Expenses WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { ExpenseTypeId, Date, Amount, PaymentAccount } = itemToRestore.recordset[0];
+
+    // Check for active duplicates
+    // Compare date at the day level
+    const checkDup = await sql.query`
+      SELECT Id FROM Expenses 
+      WHERE IsActive = 1 
+      AND ExpenseTypeId = ${ExpenseTypeId}
+      AND CAST(Date AS DATE) = CAST(${Date} AS DATE)
+      AND Amount = ${Amount}
+      AND PaymentAccount = ${PaymentAccount}
+    `;
+
+    if (checkDup.recordset.length > 0) {
+      return res.status(409).json({ message: "Cannot restore. An active expense with the same Type, Date, Amount, and Account already exists." });
+    }
+
     await sql.query`
       UPDATE Expenses
       SET 

@@ -281,6 +281,21 @@ exports.restoreWarehouse = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT Name, CountryId, StateId, CityId FROM Warehouses WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Name, CountryId, StateId, CityId } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`
+      SELECT Id 
+      FROM Warehouses 
+      WHERE LOWER(Name) = LOWER(${Name.trim()}) 
+        AND CountryId = ${CountryId} 
+        AND StateId = ${StateId}
+        AND CityId = ${CityId}
+        AND IsActive = 1
+    `;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active warehouse with this name already exists in the same city." });
+
     await sql.query`
       UPDATE Warehouses
       SET IsActive = 1,

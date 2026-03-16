@@ -237,6 +237,13 @@ exports.restoreTerritory = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT territoryDescription, regionId FROM Territories WHERE id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { territoryDescription, regionId } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT id FROM Territories WHERE LOWER(territoryDescription) = LOWER(${territoryDescription.trim()}) AND regionId = ${regionId} AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active territory with this description already exists in the same region." });
+
     await sql.query`
       UPDATE Territories
       SET 

@@ -5,7 +5,7 @@ const formatISTTime = (dateString) => {
   const date = new Date(dateString);
 
   return new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
+    timeZone: 'UTC',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
@@ -18,7 +18,7 @@ const formatISTDateTime = (dateString) => {
   const date = new Date(dateString);
 
   return new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
+    timeZone: 'UTC',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
@@ -28,7 +28,21 @@ const formatISTDateTime = (dateString) => {
   }).format(date);
 };
 
+const formatISTDate = (dateString) => {
+  if (!dateString) return '';
+
+  const date = new Date(dateString);
+
+  return new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'UTC',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric'
+  }).format(date);
+};
+
 module.exports = {
   formatISTTime,
-  formatISTDateTime
+  formatISTDateTime,
+  formatISTDate
 };

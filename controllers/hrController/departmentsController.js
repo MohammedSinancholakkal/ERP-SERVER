@@ -209,6 +209,20 @@ exports.restoreDepartment = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // --- Duplicate Check Start ---
+    const targetResult = await sql.query`SELECT Department FROM Departments WHERE Id = ${id}`;
+    if (targetResult.recordset.length > 0) {
+      const targetName = targetResult.recordset[0].Department;
+      const duplicateCheck = await sql.query`
+        SELECT Id FROM Departments 
+        WHERE Department = ${targetName} AND IsActive = 1
+      `;
+      if (duplicateCheck.recordset.length > 0) {
+        return res.status(409).json({ message: "An active department with this name already exists. Cannot restore." });
+      }
+    }
+    // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Departments
       SET

@@ -195,6 +195,25 @@ exports.restoreCurrency = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // --- Duplicate Check Start ---
+    const targetResult = await sql.query`SELECT CurrencyName, CurrencySymbol FROM Currencies WHERE Id = ${id}`;
+    if (targetResult.recordset.length > 0) {
+      const target = targetResult.recordset[0];
+      const request = new sql.Request();
+      request.input('CurrencyName', sql.NVarChar, target.CurrencyName || '');
+      request.input('CurrencySymbol', sql.NVarChar, target.CurrencySymbol || '');
+
+      const dupCheckQuery = `
+        SELECT Id FROM Currencies 
+        WHERE IsActive = 1 AND (CurrencyName = @CurrencyName OR CurrencySymbol = @CurrencySymbol)
+      `;
+      const duplicateCheck = await request.query(dupCheckQuery);
+      if (duplicateCheck.recordset.length > 0) {
+        return res.status(409).json({ message: "An active currency with this name or symbol already exists. Cannot restore." });
+      }
+    }
+    // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Currencies
       SET 

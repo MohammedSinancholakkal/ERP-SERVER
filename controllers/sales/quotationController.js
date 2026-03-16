@@ -470,31 +470,35 @@ exports.searchQuotation = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        Id              AS id,
-        QuotationNo     AS quotationNo,
-        CustomerId      AS customerId,
-        Date            AS date,
-        ExpiryDate      AS expiryDate,
-        Discount        AS discount,
-        TotalDiscount   AS totalDiscount,
-        TotalTax        AS totalTax,
-        ShippingCost    AS shippingCost,
-        GrandTotal      AS grandTotal,
-        NetTotal        AS netTotal,
-        VehicleNo       AS vehicleNo,
-        TaxTypeId       AS taxTypeId,
-        IGSTRate        AS igstRate,
-        CGSTRate        AS cgstRate,
-        SGSTRate        AS sgstRate,
-        Details         AS details
-      FROM Quotations
-      WHERE IsActive = 1
+        Q.Id              AS id,
+        Q.QuotationNo     AS quotationNo,
+        Q.CustomerId      AS customerId,
+        C.Name            AS customerName,
+        Q.Date            AS date,
+        Q.ExpiryDate      AS expiryDate,
+        Q.Discount        AS discount,
+        Q.TotalDiscount   AS totalDiscount,
+        Q.TotalTax        AS totalTax,
+        Q.ShippingCost    AS shippingCost,
+        Q.GrandTotal      AS grandTotal,
+        Q.NetTotal        AS netTotal,
+        Q.VehicleNo       AS vehicleNo,
+        Q.TaxTypeId       AS taxTypeId,
+        Q.IGSTRate        AS igstRate,
+        Q.CGSTRate        AS cgstRate,
+        Q.SGSTRate        AS sgstRate,
+        Q.Details         AS details
+      FROM Quotations Q
+      LEFT JOIN Customers C ON Q.CustomerId = C.Id
+      WHERE Q.IsActive = 1
         AND (
-          CAST(Id AS NVARCHAR) LIKE ${'%' + q + '%'}
-          OR VehicleNo LIKE ${'%' + q + '%'}
-          OR Details LIKE ${'%' + q + '%'}
+          CAST(Q.Id AS NVARCHAR) LIKE ${'%' + q + '%'}
+          OR Q.QuotationNo LIKE ${'%' + q + '%'}
+          OR Q.VehicleNo LIKE ${'%' + q + '%'}
+          OR Q.Details LIKE ${'%' + q + '%'}
+          OR C.Name LIKE ${'%' + q + '%'}
         )
-      ORDER BY InsertDate DESC
+      ORDER BY Q.InsertDate DESC
     `;
 
     res.status(200).json({

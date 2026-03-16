@@ -268,6 +268,21 @@ exports.restoreLocation = async (req, res) => {
     return res.status(400).json({ message: "userId required" });
 
   try {
+    const itemToRestore = await sql.query`SELECT Name, CountryId, StateId, CityId FROM Locations WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Name, CountryId, StateId, CityId } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`
+      SELECT Id 
+      FROM Locations 
+      WHERE LOWER(Name) = LOWER(${Name.trim()}) 
+        AND CountryId = ${CountryId} 
+        AND StateId = ${StateId}
+        AND CityId = ${CityId}
+        AND IsActive = 1
+    `;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active location with this name already exists in the same city." });
+
     await sql.query`
       UPDATE Locations
       SET IsActive = 1,

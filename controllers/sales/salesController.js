@@ -553,42 +553,52 @@ exports.addSale = async (req, res) => {
              }
              */
 
-             // 4. CASH/BANK DEBIT (Payment Received)
-             // Narration: "Cash at Bank in Sale for Invoice No. ... Customer: ..."
+             // ---------------------------------------------------------
+             // RECORD MASTER TRANSACTION (INV)
+             // ---------------------------------------------------------
+             if (masterEntries.length >= 2) {
+                  await accountingService.recordTransaction({
+                      vNo: vno, // Or use invoiceNo if preferred
+                      vType: 'INV', // As requested
+                      date: date,
+                      entries: masterEntries,
+                      userId: userId,
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
+
+             // 4. CASH/BANK DEBIT (Payment Received) - Receipt VType
              if (paidAmount > 0 && bankCOAId) {
-                 masterEntries.push({ 
+                 const receiptEntries = [];
+
+                 receiptEntries.push({ 
                      coaId: bankCOAId, 
                      headCode: bankHeadCode,
                      debit: paidAmount, 
                      credit: 0, 
                      narration: `Cash at Bank in Sale for Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
                  });
- 
+  
                  // 5. CUSTOMER CREDIT (Receivable Decrease)
-                 // Narration: "Customer credit for Paid Amount For Invoice No. ... Customer: ..."
-                 masterEntries.push({ 
+                 receiptEntries.push({ 
                      coaId: customerCOAId, 
                      headCode: customerHeadCode,
                      debit: 0, 
                      credit: paidAmount, 
                      narration: `Customer credit for Paid Amount For Invoice No. ${invoiceNo || vno} Customer: ${customerName}` 
                  });
-             }
 
-             // ---------------------------------------------------------
-             // RECORD SINGLE TRANSACTION
-             // ---------------------------------------------------------
-                 if (masterEntries.length >= 2) {
-                      await accountingService.recordTransaction({
-                          vNo: vno, // Or use invoiceNo if preferred
-                          vType: 'INV', // As requested
-                          date: date,
-                          entries: masterEntries,
-                          userId: userId,
-                          transaction: transaction,
-                          insertDate: now
-                      });
-              }
+                 await accountingService.recordTransaction({
+                      vNo: vno, 
+                      vType: 'Receipt',
+                      date: date,
+                      entries: receiptEntries,
+                      userId: userId,
+                      transaction: transaction,
+                      insertDate: now
+                  });
+             }
         }
 
     } catch (err) {
@@ -944,7 +954,7 @@ exports.updateSale = async (req, res) => {
                  
                  await accountingService.recordTransaction({
                      vNo: paymentVNo, // New VNo for payment update
-                     vType: 'INV', // As requested
+                     vType: 'Receipt', // As requested
                      date: txnDate,
                      entries: paymentEntries,
                      userId: userId,
@@ -1022,6 +1032,21 @@ exports.deleteSale = async (req, res) => {
           DeleteUserId = ${userId}
       WHERE SaleId = ${id}
     `;
+    
+    // Mark Transactions as Inactive
+    const invoiceRes = await new sql.Request(transaction).query`SELECT VNo FROM Sales WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await new sql.Request(transaction).query`
+                 UPDATE Transactions 
+                 SET IsActive = 0, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'INV' OR Vtype = 'Receipt')
+             `;
+        }
+    }
     
     await transaction.commit();
     res.status(200).json({ message: "Sale deleted successfully" });
@@ -1119,6 +1144,21 @@ exports.restoreSale = async (req, res) => {
       SET IsActive = 1
       WHERE SaleId = ${id}
     `;
+
+    // Restore Transactions
+    const invoiceRes = await new sql.Request(transaction).query`SELECT VNo FROM Sales WHERE Id = ${id}`;
+    if (invoiceRes.recordset.length > 0) {
+        const vno = invoiceRes.recordset[0].VNo;
+        if (vno) {
+             await new sql.Request(transaction).query`
+                 UPDATE Transactions 
+                 SET IsActive = 1, 
+                     UpdateDate = GETDATE(), 
+                     UpdateUserId = ${userId} 
+                 WHERE VNo = ${vno} AND (Vtype = 'INV' OR Vtype = 'Receipt')
+             `;
+        }
+    }
 
     await transaction.commit();
     res.status(200).json({ message: "Sale restored successfully" });

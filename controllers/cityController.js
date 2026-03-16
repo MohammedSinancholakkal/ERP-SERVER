@@ -93,9 +93,25 @@ exports.addCity = async (req, res) => {
     `;
 
     const newId = result.recordset[0].Id;
+
+    // Fetch the full record with names
+    const fullRecord = await sql.query`
+      SELECT 
+        c.id,
+        c.name,
+        c.countryId,
+        c.stateId,
+        co.name AS countryName,
+        s.name AS stateName
+      FROM Cities c
+      INNER JOIN Countries co ON c.countryId = co.id
+      INNER JOIN States s ON c.stateId = s.id
+      WHERE c.id = ${newId}
+    `;
+
     res.status(200).json({ 
         message: "City added successfully",
-        record: { id: newId, name, countryId, stateId }
+        record: fullRecord.recordset[0]
     });
   } catch (error) {
     console.error("ADD CITY ERROR:", error);
@@ -251,16 +267,20 @@ exports.getInactiveCities = async (req, res) => {
   try {
     const result = await sql.query`
       SELECT
-        id,
-        name,
-        countryId,
-        stateId,
-        isActive,
-        deleteDate,
-        deleteUserId
-      FROM Cities
-      WHERE isActive = 0
-      ORDER BY deleteDate DESC
+        c.id,
+        c.name,
+        c.countryId,
+        c.stateId,
+        co.name AS countryName,
+        s.name AS stateName,
+        c.isActive,
+        c.deleteDate,
+        c.deleteUserId
+      FROM Cities c
+      INNER JOIN Countries co ON c.countryId = co.id
+      INNER JOIN States s ON c.stateId = s.id
+      WHERE c.isActive = 0
+      ORDER BY c.deleteDate DESC
     `;
     res.status(200).json({ records: result.recordset });
   } catch (error) {
@@ -274,6 +294,19 @@ exports.restoreCity = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
   try {
+    // 1. Get the name and stateId of the city being restored
+    const cityToRestore = await sql.query`SELECT name, stateId FROM Cities WHERE id = ${id}`;
+    if (cityToRestore.recordset.length === 0) {
+        return res.status(404).json({ message: "City not found" });
+    }
+    const { name: cityName, stateId } = cityToRestore.recordset[0];
+
+    // 2. Check if an active city with this name and state already exists
+    const checkDuplicate = await sql.query`SELECT id FROM Cities WHERE name = ${cityName} AND stateId = ${stateId} AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) {
+        return res.status(409).json({ message: "Cannot restore. An active city with this name already exists in the selected state." });
+    }
+
     await sql.query`
       UPDATE Cities
       SET

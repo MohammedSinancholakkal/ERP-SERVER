@@ -179,6 +179,13 @@ exports.restoreTaxType = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT name FROM TaxTypes WHERE id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { name } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT id FROM TaxTypes WHERE LOWER(name) = LOWER(${name.trim()}) AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active tax type with this name already exists." });
+
     await sql.query`
       UPDATE TaxTypes
       SET 

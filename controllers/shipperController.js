@@ -218,6 +218,13 @@ exports.restoreShipper = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT CompanyName FROM Shippers WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { CompanyName } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT Id FROM Shippers WHERE LOWER(CompanyName) = LOWER(${CompanyName.trim()}) AND IsActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active shipper with this company name already exists." });
+
     await sql.query`
       UPDATE Shippers
       SET 

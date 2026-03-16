@@ -14,6 +14,7 @@ router.put("/update/:id", checkPermission(PERMISSIONS.SUPPLIERS.EDIT), suppliers
 // Inactive + Restore (MUST BE BEFORE /:id)
 router.get("/inactive", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.getInactiveSuppliers);
 router.get("/payable-report", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.getSupplierPayables);
+router.get("/payable-details-report", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.getSupplierPayablesDetailed);
 router.put("/restore/:id", checkPermission(PERMISSIONS.SUPPLIERS.DELETE), suppliersController.restoreSupplier);
 
 router.get("/search", checkPermission(PERMISSIONS.SUPPLIERS.VIEW), suppliersController.searchSuppliers);

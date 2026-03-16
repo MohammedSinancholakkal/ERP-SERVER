@@ -201,6 +201,15 @@ exports.restoreBrand = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT Name FROM Brands WHERE Id = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { Name } = itemToRestore.recordset[0];
+
+    const checkName = await sql.query`SELECT Id FROM Brands WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
+    if (checkName.recordset.length > 0) {
+        return res.status(409).json({ message: "Cannot restore. An active brand with this name already exists." });
+    }
+
     await sql.query`
       UPDATE Brands
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}

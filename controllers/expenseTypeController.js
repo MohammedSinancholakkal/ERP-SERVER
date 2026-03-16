@@ -219,6 +219,13 @@ exports.restoreExpenseType = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const itemToRestore = await sql.query`SELECT typeName FROM ExpenseTypes WHERE typeId = ${id}`;
+    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
+    const { typeName } = itemToRestore.recordset[0];
+
+    const checkDuplicate = await sql.query`SELECT typeId FROM ExpenseTypes WHERE LOWER(typeName) = LOWER(${typeName.trim()}) AND isActive = 1`;
+    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active expense type with this name already exists." });
+
     await sql.query`
       UPDATE ExpenseTypes
       SET 

@@ -74,4 +74,8 @@ router.get("/inactive", checkPermission(PERMISSIONS.BANKS), bankController.getIn
 
 router.put("/restore/:id", checkPermission(PERMISSIONS.BANKS), bankController.restoreBank);
 
+router.get("/cash-in-hand-report", checkPermission(PERMISSIONS.REPORTS.VIEW), bankController.getCashInHandReport);
+
+router.get("/cash-at-bank-report", checkPermission(PERMISSIONS.REPORTS.VIEW), bankController.getCashAtBankReport);
+
 module.exports = router;

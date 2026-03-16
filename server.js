@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+
+
 const cors = require('cors');
 const path = require("path");
 
@@ -241,6 +243,7 @@ ERP_SERVER.use("/api/journal-vouchers", require("./routes/journalVoucherRoutes")
 ERP_SERVER.use("/api/cash-adjustments", require("./routes/financial/cashAdjustmentRoutes"));
 ERP_SERVER.use("/api/tax-types", require("./routes/taxTypeRoutes"));
 ERP_SERVER.use("/api/tax-percentages", require("./routes/taxPercentageRoutes"));
+ERP_SERVER.use("/api/tax-report", require("./routes/taxReportRoutes"));
 ERP_SERVER.use("/api/day-closing", require("./routes/financial/dayClosingRoutes"));
 
 

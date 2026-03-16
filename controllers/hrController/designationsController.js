@@ -209,6 +209,20 @@ exports.restoreDesignation = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // --- Duplicate Check Start ---
+    const targetResult = await sql.query`SELECT Designation FROM Designations WHERE Id = ${id}`;
+    if (targetResult.recordset.length > 0) {
+      const targetName = targetResult.recordset[0].Designation;
+      const duplicateCheck = await sql.query`
+        SELECT Id FROM Designations 
+        WHERE Designation = ${targetName} AND IsActive = 1
+      `;
+      if (duplicateCheck.recordset.length > 0) {
+        return res.status(409).json({ message: "An active designation with this name already exists. Cannot restore." });
+      }
+    }
+    // --- Duplicate Check End ---
+
     await sql.query`
       UPDATE Designations
       SET
