@@ -39,7 +39,11 @@ exports.getAllPayrolls = async (req, res) => {
         TotalDeduction,
         TotalTakeHomePay,
         TotalPaymentAmount,
-        CurrencyName
+        CurrencyName,
+        (SELECT TOP 1 PayrollYear FROM PayrollDetail WHERE PayrollId = Payroll.Id AND IsActive = 1) AS PayrollYear,
+        (SELECT TOP 1 PayrollMonth FROM PayrollDetail WHERE PayrollId = Payroll.Id AND IsActive = 1) AS PayrollMonth,
+        (SELECT SUM(PFEmployer) FROM PayrollDetail WHERE PayrollId = Payroll.Id AND IsActive = 1) AS TotalPFEmployer,
+        (SELECT SUM(ESIEmployer) FROM PayrollDetail WHERE PayrollId = Payroll.Id AND IsActive = 1) AS TotalESIEmployer
       FROM Payroll
       WHERE IsActive = 1
       ORDER BY ${sortColumn} ${order}
@@ -162,6 +166,11 @@ exports.addPayroll = async (req, res) => {
           BankAccount, BankId,
           BasicSalary, TotalIncome,
           TotalDeduction, TakeHomePay,
+          BasicPay, DA, HRA,
+          PFEmployee, PFEmployer,
+          ESIEmployee, ESIEmployer,
+          PayrollYear, PayrollMonth,
+          TotalDaysInMonth, WorkedDays,
           InsertUserId
         )
         OUTPUT INSERTED.Id
@@ -170,6 +179,11 @@ exports.addPayroll = async (req, res) => {
           ${emp.bankAccount}, ${emp.bankId},
           ${emp.basicSalary}, ${emp.totalIncome},
           ${emp.totalDeduction}, ${emp.takeHomePay},
+          ${emp.basicPay || 0}, ${emp.da || 0}, ${emp.hra || 0},
+          ${emp.pfEmployee || 0}, ${emp.pfEmployer || 0},
+          ${emp.esiEmployee || 0}, ${emp.esiEmployer || 0},
+          ${emp.payrollYear || null}, ${emp.payrollMonth || ''},
+          ${emp.totalDaysInMonth || 0}, ${emp.workedDays || 0},
           ${userId}
         )
       `;
@@ -291,6 +305,11 @@ exports.updatePayroll = async (req, res) => {
           BankAccount, BankId,
           BasicSalary, TotalIncome,
           TotalDeduction, TakeHomePay,
+          BasicPay, DA, HRA,
+          PFEmployee, PFEmployer,
+          ESIEmployee, ESIEmployer,
+          PayrollYear, PayrollMonth,
+          TotalDaysInMonth, WorkedDays,
           InsertUserId
         )
         OUTPUT INSERTED.Id
@@ -299,6 +318,11 @@ exports.updatePayroll = async (req, res) => {
           ${emp.bankAccount}, ${emp.bankId},
           ${emp.basicSalary}, ${emp.totalIncome},
           ${emp.totalDeduction}, ${emp.takeHomePay},
+          ${emp.basicPay || 0}, ${emp.da || 0}, ${emp.hra || 0},
+          ${emp.pfEmployee || 0}, ${emp.pfEmployer || 0},
+          ${emp.esiEmployee || 0}, ${emp.esiEmployer || 0},
+          ${emp.payrollYear || null}, ${emp.payrollMonth || ''},
+          ${emp.totalDaysInMonth || 0}, ${emp.workedDays || 0},
           ${userId}
         )
       `;
@@ -388,7 +412,11 @@ exports.getInactivePayrolls = async (req, res) => {
         PaymentDate,
         TotalPaymentAmount,
         DeleteDate,
-        DeleteUserId
+        DeleteUserId,
+        (SELECT TOP 1 PayrollYear FROM PayrollDetail WHERE PayrollId = Payroll.Id) AS PayrollYear,
+        (SELECT TOP 1 PayrollMonth FROM PayrollDetail WHERE PayrollId = Payroll.Id) AS PayrollMonth,
+        (SELECT SUM(PFEmployer) FROM PayrollDetail WHERE PayrollId = Payroll.Id) AS TotalPFEmployer,
+        (SELECT SUM(ESIEmployer) FROM PayrollDetail WHERE PayrollId = Payroll.Id) AS TotalESIEmployer
       FROM Payroll
       WHERE IsActive = 0
       ORDER BY DeleteDate DESC

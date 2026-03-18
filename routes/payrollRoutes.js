@@ -1,8 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const payrollController = require("../controllers/hrController/payrollController");
+const payrollPeriodController = require("../controllers/hrController/payrollPeriodController");
 const checkPermission = require("../middleware/checkPermission");
 const PERMISSIONS = require("../constants/permissions");
+
+// Periods
+router.get("/periods/all", checkPermission(PERMISSIONS.HR.PAYROLL.VIEW), payrollPeriodController.getPayrollMonths);
 
 // Add
 router.post("/add", checkPermission(PERMISSIONS.HR.PAYROLL.CREATE), payrollController.addPayroll);

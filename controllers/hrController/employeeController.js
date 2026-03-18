@@ -35,7 +35,14 @@ exports.createEmployee = async (req, res) => {
       payrollBankAccount,
       userId,
       incomes,
-      deductions
+      deductions,
+      basicPay,
+      da,
+      hra,
+      pfEmployee,
+      pfEmployer,
+      esiEmployee,
+      esiEmployer
     } = parsedBody;
 
     // picture
@@ -56,7 +63,8 @@ exports.createEmployee = async (req, res) => {
         HoureRateSalary, BasicSalary, BloodGroup, Phone, Email, Picture,
         CountryId, StateId, CityId, RegionId, TerritoryId,
         ZipCode, Address, PayrollBankId, BankAccountForPayroll,
-        UserId, InsertDate, InsertUserId, IsActive
+        UserId, InsertDate, InsertUserId, IsActive,
+        BasicPay, DA, HRA, PFEmployee, PFEmployer, ESIEmployee, ESIEmployer
       )
       OUTPUT inserted.Id
       VALUES
@@ -67,7 +75,8 @@ exports.createEmployee = async (req, res) => {
         ${(!isNaN(parseInt(countryId)) ? countryId : null) || 'NULL'}, ${(!isNaN(parseInt(stateId)) ? stateId : null) || 'NULL'}, ${(!isNaN(parseInt(cityId)) ? cityId : null) || 'NULL'}, ${(!isNaN(parseInt(regionId)) ? regionId : null) || 'NULL'}, ${(!isNaN(parseInt(territoryId)) ? territoryId : null) || 'NULL'},
         '${zipCode || ''}', '${address || ''}',
         ${(!isNaN(parseInt(payrollBankId)) ? payrollBankId : null) || 'NULL'}, '${payrollBankAccount || ''}',
-        ${userId || 1}, GETDATE(), ${userId || 1}, 1
+        ${userId || 1}, GETDATE(), ${userId || 1}, 1,
+        ${basicPay || 0}, ${da || 0}, ${hra || 0}, ${pfEmployee || 0}, ${pfEmployer || 0}, ${esiEmployee || 0}, ${esiEmployer || 0}
       )
     `);
 
@@ -320,7 +329,14 @@ exports.updateEmployee = async (req, res) => {
       payrollBankAccount,
       userId,
       incomes,
-      deductions
+      deductions,
+      basicPay,
+      da,
+      hra,
+      pfEmployee,
+      pfEmployer,
+      esiEmployee,
+      esiEmployer
     } = parsedBody;
 
     // ✅ NEW PICTURE IF UPLOADED
@@ -350,6 +366,13 @@ exports.updateEmployee = async (req, res) => {
         RateType = '${rateType || ''}',
         HoureRateSalary = ${hourlyRate || 0},
         BasicSalary = ${salary || 0},
+        BasicPay = ${basicPay || 0},
+        DA = ${da || 0},
+        HRA = ${hra || 0},
+        PFEmployee = ${pfEmployee || 0},
+        PFEmployer = ${pfEmployer || 0},
+        ESIEmployee = ${esiEmployee || 0},
+        ESIEmployer = ${esiEmployer || 0},
         BloodGroup = '${bloodGroup || ''}',
         Phone = '${phone || ''}',
         Email = '${email || ''}',
