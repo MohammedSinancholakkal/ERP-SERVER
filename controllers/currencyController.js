@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL CURRENCIES (Paginated)
@@ -64,6 +65,7 @@ exports.addCurrency = async (req, res) => {
       VALUES (${currencyName}, ${currencySymbol}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_CURRENCY', `Created Currency: ${currencyName}`, req.ip);
     res.status(200).json({ message: "Currency added successfully" });
   } catch (error) {
     console.error("ADD CURRENCY ERROR:", error);
@@ -79,6 +81,9 @@ exports.updateCurrency = async (req, res) => {
   const { currencyName, currencySymbol, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT CurrencyName FROM Currencies WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CurrencyName : "Unknown";
+
     await sql.query`
       UPDATE Currencies
       SET 
@@ -89,6 +94,7 @@ exports.updateCurrency = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_CURRENCY', `Updated Currency: ${oldName} -> ${currencyName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency updated successfully" });
   } catch (error) {
     console.error("UPDATE CURRENCY ERROR:", error);
@@ -113,6 +119,7 @@ exports.deleteCurrency = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_CURRENCY', `Deleted Currency (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency deleted successfully" });
   } catch (error) {
     console.error("DELETE CURRENCY ERROR:", error);
@@ -223,6 +230,8 @@ exports.restoreCurrency = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    const oldName = targetResult.recordset.length > 0 ? targetResult.recordset[0].CurrencyName : "Unknown";
+    await auditService.logAction(userId, 'RESTORE_CURRENCY', `Restored Currency: ${oldName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency restored successfully" });
   } catch (error) {
     console.error("RESTORE CURRENCY ERROR:", error);

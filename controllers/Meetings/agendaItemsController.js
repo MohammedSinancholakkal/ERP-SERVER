@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET AGENDA ITEMS BY MEETING ID
@@ -82,6 +83,7 @@ exports.addAgendaItem = async (req, res) => {
       )
     `;
 
+    await auditService.logAction(userId, 'CREATE_AGENDA_ITEM', `Created Agenda Item: ${title}`, req.ip);
     res.status(201).json({ message: "Agenda item added successfully" });
 
   } catch (error) {
@@ -110,6 +112,8 @@ exports.updateAgendaItem = async (req, res) => {
 
 
   try {
+    const oldRes = await sql.query`SELECT Title FROM AgendaItems WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Title : "Unknown";
 
 
     const imageFilename = req.files?.['imageFile']?.[0]?.filename || null;
@@ -149,6 +153,7 @@ exports.updateAgendaItem = async (req, res) => {
          `;
     }
 
+    await auditService.logAction(userId, 'UPDATE_AGENDA_ITEM', `Updated Agenda Item: ${oldName} -> ${title} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Agenda item updated successfully" });
 
   } catch (error) {
@@ -171,6 +176,7 @@ exports.deleteAgendaItem = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_AGENDA_ITEM', `Deleted Agenda Item (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Agenda item deleted successfully" });
 
   } catch (error) {

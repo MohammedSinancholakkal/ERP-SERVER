@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL GOODS ISSUES (Paginated)
@@ -197,6 +198,7 @@ exports.addGoodsIssue = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_GOODS_ISSUE', `Created Goods Issue (Total Qty: ${totalQuantity})`, req.ip);
     res.status(200).json({ message: "Goods issue added successfully" });
 
   } catch (error) {
@@ -272,6 +274,7 @@ exports.updateGoodsIssue = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'UPDATE_GOODS_ISSUE', `Updated Goods Issue (ID: ${id}, Total Qty: ${totalQuantity})`, req.ip);
     res.status(200).json({ message: "Goods issue updated successfully" });
 
   } catch (error) {
@@ -309,6 +312,7 @@ exports.deleteGoodsIssue = async (req, res) => {
       WHERE GoodsIssueId = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_GOODS_ISSUE', `Deleted Goods Issue (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Goods issue deleted successfully" });
 
   } catch (error) {
@@ -382,6 +386,7 @@ exports.restoreGoodsIssue = async (req, res) => {
       WHERE GoodsIssueId = ${id}
     `;
   
+    await auditService.logAction(userId, 'RESTORE_GOODS_ISSUE', `Restored Goods Issue (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Goods issue restored successfully" });
 
   } catch (error) {   

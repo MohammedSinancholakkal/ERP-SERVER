@@ -1,5 +1,5 @@
-const sql = require("mssql");
 const accountingService = require("../../services/accountingService");
+const auditService = require("../../services/auditService");
 const { generateVNo } = require("../../utils/vnoUtils");
 
 // ============================================
@@ -202,6 +202,7 @@ exports.addContraVoucher = async (req, res) => {
                 `;
         }
 
+        await auditService.logAction(userId, 'CREATE_CONTRA_VOUCHER', `Created Contra Voucher (VNo: ${vNo}, Amount: ${amount})`, req.ip);
         res.status(201).json({ message: "Contra Voucher created successfully", vNo });
     } catch (error) {
         console.error("ADD CONTRA VOUCHER ERROR:", error);
@@ -251,6 +252,9 @@ exports.updateContraVoucher = async (req, res) => {
         // For now, let's notify success on main table update.
         // TODO: Implement Transaction update logic if required (DELETE + INSERT)
 
+        const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM ContraVouchers WHERE Id = @Id`);
+        const updatedVoucher = updatedRes.recordset[0];
+        await auditService.logAction(userId, 'UPDATE_CONTRA_VOUCHER', `Updated Contra Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
         res.status(200).json({ message: "Contra Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE CONTRA VOUCHER ERROR:", error);
@@ -268,6 +272,9 @@ exports.deleteContraVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM ContraVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("DeleteUserId", sql.Int, userId)
@@ -287,6 +294,9 @@ exports.deleteContraVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoDel AND VType = 'Contra';
             `;
 
+        const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM ContraVouchers WHERE Id = @Id`);
+        const deletedVoucher = deletedRes.recordset[0];
+        await auditService.logAction(userId, 'DELETE_CONTRA_VOUCHER', `Deleted Contra Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
         res.status(200).json({ message: "Contra Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE CONTRA VOUCHER ERROR:", error);
@@ -304,6 +314,9 @@ exports.restoreContraVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM ContraVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("UpdateUserId", sql.Int, userId)
@@ -323,6 +336,9 @@ exports.restoreContraVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoRes AND VType = 'Contra';
             `;
 
+        const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM ContraVouchers WHERE Id = @Id`);
+        const restoredVoucher = restoredRes.recordset[0];
+        await auditService.logAction(userId, 'RESTORE_CONTRA_VOUCHER', `Restored Contra Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
         res.status(200).json({ message: "Contra Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE CONTRA VOUCHER ERROR:", error);

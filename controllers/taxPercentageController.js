@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL TAX PERCENTAGES
@@ -57,6 +58,7 @@ exports.addTaxPercentage = async (req, res) => {
       INSERT INTO TaxPercentages (percentage, insertUserId)
       VALUES (${percentage}, ${userId})
     `;
+    await auditService.logAction(userId, 'CREATE_TAXPERCENTAGE', `Created Tax Percentage: ${percentage}%`, req.ip);
     res.status(200).json({ message: "Tax Percentage added successfully" });
   } catch (error) {
     console.error("ADD TAX PERCENTAGE ERROR:", error);
@@ -72,6 +74,9 @@ exports.updateTaxPercentage = async (req, res) => {
   const { percentage, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT percentage FROM TaxPercentages WHERE id = ${id}`;
+    const oldPct = oldRes.recordset.length > 0 ? oldRes.recordset[0].percentage : "Unknown";
+
     await sql.query`
       UPDATE TaxPercentages 
       SET 
@@ -80,6 +85,7 @@ exports.updateTaxPercentage = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'UPDATE_TAXPERCENTAGE', `Updated Tax Percentage: ${oldPct}% -> ${percentage}% (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage updated successfully" });
   } catch (error) {
     console.error("UPDATE TAX PERCENTAGE ERROR:", error);
@@ -103,6 +109,7 @@ exports.deleteTaxPercentage = async (req, res) => {
         deleteUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'DELETE_TAXPERCENTAGE', `Deleted Tax Percentage (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage deleted successfully" });
   } catch (error) {
     console.error("DELETE TAX PERCENTAGE ERROR:", error);
@@ -192,6 +199,7 @@ exports.restoreTaxPercentage = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_TAXPERCENTAGE', `Restored Tax Percentage: ${percentage}% (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage restored successfully" });
 
   } catch (error) {

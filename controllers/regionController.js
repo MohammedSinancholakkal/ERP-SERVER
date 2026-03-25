@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL REGIONS
@@ -75,6 +76,7 @@ exports.addRegion = async (req, res) => {
     `;
 
     const newId = result.recordset[0].id;
+    await auditService.logAction(userId, 'CREATE_REGION', `Created Region: ${regionName} (ID: ${newId})`, req.ip);
     res.status(201).json({ 
         message: "Region added successfully",
         record: { id: newId, name: regionName }
@@ -96,6 +98,9 @@ exports.updateRegion = async (req, res) => {
     return res.status(400).json({ message: "Region name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT regionName FROM Regions WHERE regionId = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].regionName : "Unknown";
+
     await sql.query`
       UPDATE Regions
       SET 
@@ -105,6 +110,7 @@ exports.updateRegion = async (req, res) => {
       WHERE regionId = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_REGION', `Updated Region: ${oldName} -> ${regionName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region updated successfully" });
   } catch (error) {
     console.log("UPDATE REGION ERROR:", error);
@@ -129,6 +135,7 @@ exports.deleteRegion = async (req, res) => {
       WHERE regionId = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_REGION', `Deleted Region (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region deleted successfully" });
   } catch (error) {
     console.log("DELETE REGION ERROR:", error);
@@ -250,6 +257,7 @@ exports.restoreRegion = async (req, res) => {
       WHERE regionId = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_REGION', `Restored Region: ${regionName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region restored successfully" });
   } catch (error) {
     console.log("RESTORE REGION ERROR:", error);

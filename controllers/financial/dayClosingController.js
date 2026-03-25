@@ -1,4 +1,5 @@
 const sql = require("mssql");
+const auditService = require("../../services/auditService");
 
 // Helper function to get the current date in YYYY-MM-DD format (local time to avoid timezone shifts)
 const getTodayStr = () => {
@@ -136,6 +137,7 @@ exports.saveDayClosing = async (req, res) => {
                 VALUES (@date, @open, @receive, @payment, @close, @uid, GETDATE())
             `);
             
+        await auditService.logAction(userId, 'CREATE_DAY_CLOSING', `Closed Day: ${todayStr} (Closing Balance: ${balance})`, req.ip);    
         res.status(201).json({ message: "Day successfully closed." });
     } catch(err) {
         console.error("Error saving Day Closing:", err);

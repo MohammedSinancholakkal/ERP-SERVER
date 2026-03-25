@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL DESIGNATIONS (Paginated)
@@ -79,6 +80,7 @@ exports.addDesignation = async (req, res) => {
     `;
 
     const newId = result.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_DESIGNATION', `Created Designation: ${designation} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "Designation added successfully",
         record: { id: newId, name: designation }
@@ -97,6 +99,9 @@ exports.updateDesignation = async (req, res) => {
   const { designation, description, parentDesignationId, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT Designation FROM Designations WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Designation : "Unknown";
+
     await sql.query`
       UPDATE Designations
       SET
@@ -108,6 +113,7 @@ exports.updateDesignation = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_DESIGNATION', `Updated Designation: ${oldName} -> ${designation} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation updated successfully" });
   } catch (error) {
     console.error("UPDATE DESIGNATION ERROR:", error);
@@ -132,6 +138,7 @@ exports.deleteDesignation = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_DESIGNATION', `Deleted Designation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation deleted successfully" });
   } catch (error) {
     console.error("DELETE DESIGNATION ERROR:", error);
@@ -232,6 +239,7 @@ exports.restoreDesignation = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_DESIGNATION', `Restored Designation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation restored successfully" });
   } catch (error) {
     console.error("RESTORE DESIGNATION ERROR:", error);

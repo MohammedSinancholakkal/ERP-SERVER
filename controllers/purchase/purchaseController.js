@@ -1,6 +1,7 @@
 const sql = require("../../db/dbConfig");
 const { generateVNo } = require("../../utils/vnoUtils");
 const accountingService = require("../../services/accountingService");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL PURCHASES (Paginated)
@@ -545,6 +546,7 @@ exports.addPurchase = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_PURCHASE', `Created Purchase (VNo: ${vno || finalInvoiceNo}, Net Total: ${safeNumbers.netTotal})`, req.ip);
     res.status(200).json({ message: "Purchase added successfully" });
 
   } catch (error) {
@@ -620,9 +622,10 @@ exports.updatePurchase = async (req, res) => {
     let oldVNo = null;  
 
     // ALWAYS Fetch current VNo and InvoiceNo from DB to preserve it AND to use it for deleting old transactions
-    const currentRes = await new sql.Request(transaction).query`SELECT VNo, InvoiceNo FROM Purchases WHERE Id = ${id}`;
-    oldVNo = currentRes.recordset[0]?.VNo;
-    const dbInvoiceNo = currentRes.recordset[0]?.InvoiceNo;
+    const currentRes = await new sql.Request(transaction).query`SELECT * FROM Purchases WHERE Id = ${id}`;
+    const currentPurchase = currentRes.recordset[0];
+    oldVNo = currentPurchase?.VNo;
+    const dbInvoiceNo = currentPurchase?.InvoiceNo;
 
     // If request didn't provide VNo, use the old one
     if (!finalVNo || finalVNo.trim() === '') {
@@ -862,6 +865,9 @@ exports.updatePurchase = async (req, res) => {
     }
 
     await transaction.commit();
+    const updatedPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
+    const updatedPurchase = updatedPurchaseResult.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_PURCHASE', `Updated Purchase (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip, currentPurchase, updatedPurchase);
     res.status(200).json({ message: "Purchase updated successfully" });
 
   } catch (error) {
@@ -882,6 +888,9 @@ exports.deletePurchase = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+     const currentPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
+     const currentPurchase = currentPurchaseResult.recordset[0];
+
      await transaction.begin();
 
      // STOCK REVERSAL: DECREASE STOCK
@@ -934,6 +943,9 @@ exports.deletePurchase = async (req, res) => {
     }
 
     await transaction.commit();
+    const deletedPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
+    const deletedPurchase = deletedPurchaseResult.recordset[0];
+    await auditService.logAction(userId, 'DELETE_PURCHASE', `Deleted Purchase (ID: ${id})`, req.ip, currentPurchase, deletedPurchase);
     res.status(200).json({ message: "Purchase deleted successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback(); // Check if transaction is active before rollback
@@ -994,6 +1006,9 @@ exports.restorePurchase = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const currentPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
+    const currentPurchase = currentPurchaseResult.recordset[0];
+
     await transaction.begin();
     
     // STOCK UPDATE: INCREASE STOCK
@@ -1046,6 +1061,9 @@ exports.restorePurchase = async (req, res) => {
     }
 
     await transaction.commit();
+    const restoredPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
+    const restoredPurchase = restoredPurchaseResult.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_PURCHASE', `Restored Purchase (ID: ${id})`, req.ip, currentPurchase, restoredPurchase);
     res.status(200).json({ message: "Purchase restored successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback(); // Check if transaction is active before rollback

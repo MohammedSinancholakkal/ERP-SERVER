@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL DEDUCTIONS
@@ -66,6 +67,7 @@ exports.addDeduction = async (req, res) => {
       VALUES (${name.trim()}, ${description || null}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_DEDUCTION', `Created Deduction: ${name.trim()}`, req.ip);
     res.status(201).json({ message: "Deduction added successfully" });
   } catch (error) {
     console.log("ADD DEDUCTION ERROR:", error);
@@ -84,6 +86,9 @@ exports.updateDeduction = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM Deductions WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE Deductions
       SET Name = ${name.trim()},
@@ -93,6 +98,7 @@ exports.updateDeduction = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_DEDUCTION', `Updated Deduction: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Deduction updated successfully" });
   } catch (error) {
     console.log("UPDATE DEDUCTION ERROR:", error);
@@ -116,6 +122,7 @@ exports.deleteDeduction = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_DEDUCTION', `Deleted Deduction (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Deduction deleted successfully" });
   } catch (error) {
     console.log("DELETE DEDUCTION ERROR:", error);
@@ -191,6 +198,7 @@ exports.restoreDeduction = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_DEDUCTION', `Restored Deduction: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Deduction restored successfully" });
   } catch (err) {
     console.log("RESTORE DEDUCTION ERROR:", err);

@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL BRANDS (Paginated)
@@ -73,6 +74,7 @@ exports.addBrand = async (req, res) => {
 
     const newId = result.recordset[0].Id;
 
+    await auditService.logAction(userId, 'CREATE_BRAND', `Created Brand: ${name}`, req.ip);
     res.status(200).json({ 
         message: "Brand added successfully",
         record: { id: newId, name, description }
@@ -99,6 +101,9 @@ exports.updateBrand = async (req, res) => {
       return res.status(409).json({ message: "Brand name already exists" });
     }
 
+    const oldRes = await sql.query`SELECT Name FROM Brands WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE Brands 
       SET 
@@ -109,6 +114,7 @@ exports.updateBrand = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_BRAND', `Updated Brand: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand updated successfully" });
 
   } catch (error) {
@@ -135,6 +141,7 @@ exports.deleteBrand = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_BRAND', `Deleted Brand (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand deleted successfully" });
 
   } catch (error) {
@@ -215,6 +222,7 @@ exports.restoreBrand = async (req, res) => {
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+    await auditService.logAction(userId, 'RESTORE_BRAND', `Restored Brand: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand restored successfully" });
   } catch (error) {
     console.error("RESTORE BRAND ERROR:", error);

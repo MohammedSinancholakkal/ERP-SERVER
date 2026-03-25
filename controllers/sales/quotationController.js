@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 
 // GET NEXT QUOTATION NO
@@ -247,6 +248,7 @@ exports.addQuotation = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_QUOTATION', `Created Quotation (No: ${quotationNo}, Net Total: ${netTotal})`, req.ip);
     res.status(200).json({ message: "Quotation added successfully" });
 
   } catch (error) {
@@ -289,6 +291,12 @@ exports.updateQuotation = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    // Fetch current state for before-audit
+    const currentQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const currentQuotation = currentQuotationResult.recordset[0];
+
     await transaction.begin();
 
     // ---------- UPDATE MASTER
@@ -343,6 +351,14 @@ exports.updateQuotation = async (req, res) => {
     }
 
     await transaction.commit();
+
+    // Fetch new state for after-audit
+    const updatedQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const updatedQuotation = updatedQuotationResult.recordset[0];
+
+    await auditService.logAction(userId, 'UPDATE_QUOTATION', `Updated Quotation (ID: ${id}) - Net Total: ${netTotal}`, req.ip, currentQuotation, updatedQuotation);
     res.status(200).json({ message: "Quotation updated successfully" });
 
   } catch (error) {
@@ -360,6 +376,12 @@ exports.deleteQuotation = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // Fetch current state for before-audit
+    const currentQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const currentQuotation = currentQuotationResult.recordset[0];
+
     await sql.query`
       UPDATE Quotations
       SET IsActive = 0,
@@ -376,6 +398,13 @@ exports.deleteQuotation = async (req, res) => {
       WHERE QuotationId = ${id}
     `;
 
+    // Fetch new state for after-audit
+    const deletedQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const deletedQuotation = deletedQuotationResult.recordset[0];
+
+    await auditService.logAction(userId, 'DELETE_QUOTATION', `Deleted Quotation (ID: ${id})`, req.ip, currentQuotation, deletedQuotation);
     res.status(200).json({ message: "Quotation deleted successfully" });
 
   } catch (error) {
@@ -434,6 +463,12 @@ exports.restoreQuotation = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    // Fetch current state for before-audit
+    const currentQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const currentQuotation = currentQuotationResult.recordset[0];
+
     await sql.query`
       UPDATE Quotations
       SET IsActive = 1,
@@ -448,6 +483,13 @@ exports.restoreQuotation = async (req, res) => {
       WHERE QuotationId = ${id}
     `;
 
+    // Fetch new state for after-audit
+    const restoredQuotationResult = await sql.query`
+      SELECT * FROM Quotations WHERE Id = ${id}
+    `;
+    const restoredQuotation = restoredQuotationResult.recordset[0];
+
+    await auditService.logAction(userId, 'RESTORE_QUOTATION', `Restored Quotation (ID: ${id})`, req.ip, currentQuotation, restoredQuotation);
     res.status(200).json({ message: "Quotation restored successfully" });
 
   } catch (error) {

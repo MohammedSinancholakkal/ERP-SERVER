@@ -1,6 +1,7 @@
 
 
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL CITIES (No Pagination)
@@ -109,6 +110,7 @@ exports.addCity = async (req, res) => {
       WHERE c.id = ${newId}
     `;
 
+    await auditService.logAction(userId, 'CREATE_CITY', `Created City: ${name} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "City added successfully",
         record: fullRecord.recordset[0]
@@ -133,6 +135,9 @@ exports.updateCity = async (req, res) => {
         return res.status(409).json({ message: "City with this name already exists in the selected state" });
     }
 
+    const oldRes = await sql.query`SELECT name FROM Cities WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
+
     await sql.query`  
       UPDATE Cities
       SET 
@@ -143,6 +148,7 @@ exports.updateCity = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'UPDATE_CITY', `Updated City: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "City updated" });
   } catch (error) {
     res.status(500).json({ message: "Error updating city" });
@@ -167,6 +173,7 @@ exports.deleteCity = async (req, res) => {
         deleteUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'DELETE_CITY', `Deleted City (ID: ${id})`, req.ip);
     res.status(200).json({ message: "City deleted" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting city" });
@@ -315,6 +322,7 @@ exports.restoreCity = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'RESTORE_CITY', `Restored City (ID: ${id})`, req.ip);
     res.status(200).json({ message: "City restored successfully" });
   } catch (error) {
     console.error("RESTORE CITY ERROR:", error);

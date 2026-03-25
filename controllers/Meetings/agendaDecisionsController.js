@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET AGENDA DECISIONS BY MEETING ID
@@ -85,6 +86,7 @@ exports.addAgendaDecision = async (req, res) => {
       )
     `;
 
+    await auditService.logAction(userId, 'CREATE_AGENDA_DECISION', `Created Agenda Decision: ${decisionNumber || description}`, req.ip);
     res.status(201).json({ message: "Decision added successfully" });
 
   } catch (error) {
@@ -112,6 +114,9 @@ exports.updateAgendaDecision = async (req, res) => {
   const attachmentFilename = req.files?.['attachmentFile']?.[0]?.filename || null;
 
   try {
+    const oldRes = await sql.query`SELECT Description, DecisionNumber FROM AgendaDecisions WHERE Id = ${id}`;
+    const oldDesc = oldRes.recordset.length > 0 ? (oldRes.recordset[0].DecisionNumber || oldRes.recordset[0].Description) : "Unknown";
+
     if (imageFilename || attachmentFilename) {
          await sql.query`
             UPDATE AgendaDecisions
@@ -144,6 +149,7 @@ exports.updateAgendaDecision = async (req, res) => {
          `;
     }
 
+    await auditService.logAction(userId, 'UPDATE_AGENDA_DECISION', `Updated Agenda Decision: ${oldDesc} -> ${decisionNumber || description} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Decision updated successfully" });
 
   } catch (error) {
@@ -166,6 +172,7 @@ exports.deleteAgendaDecision = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_AGENDA_DECISION', `Deleted Agenda Decision (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Decision deleted successfully" });
 
   } catch (error) {

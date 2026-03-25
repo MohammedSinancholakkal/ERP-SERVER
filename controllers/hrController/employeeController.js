@@ -1,4 +1,5 @@
 const sql = require("mssql");
+const auditService = require("../../services/auditService");
 
 // ======================================================================
 // CREATE NEW EMPLOYEE (with picture, incomes & deductions)
@@ -113,6 +114,7 @@ exports.createEmployee = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId || 1, 'CREATE_EMPLOYEE', `Created new employee: ${firstName} ${lastName} (ID: ${employeeId})`, req.ip);
 
     res.status(201).json({
       message: "Employee created successfully",
@@ -276,6 +278,9 @@ exports.deleteEmployee = async (req, res) => {
     const { id } = req.params;
     const userId = req.body.userId || 1;
 
+    const oldRes = await sql.query`SELECT * FROM Employees WHERE Id = ${id}`;
+    const oldEmp = oldRes.recordset[0];
+
     const result = await sql.query`
       UPDATE Employees
       SET IsActive = 0,
@@ -283,6 +288,10 @@ exports.deleteEmployee = async (req, res) => {
           DeleteUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Employees WHERE Id = ${id}`;
+    const newEmp = newRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_EMPLOYEE', `Deleted employee: ${oldEmp?.FirstName} ${oldEmp?.LastName} (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Employee deleted successfully" });
   } catch (error) {
@@ -350,6 +359,9 @@ exports.updateEmployee = async (req, res) => {
     if (newPicture) {
       pictureSet = `Picture = '${newPicture}',`;
     }
+
+    const oldRes = await sql.query`SELECT * FROM Employees WHERE Id = ${employeeId}`;
+    const oldEmp = oldRes.recordset[0];
 
     await transaction.begin();
 
@@ -441,6 +453,10 @@ exports.updateEmployee = async (req, res) => {
 
     await transaction.commit();
 
+    const newRes = await sql.query`SELECT * FROM Employees WHERE Id = ${employeeId}`;
+    const newEmp = newRes.recordset[0];
+    await auditService.logAction(userId || 1, 'UPDATE_EMPLOYEE', `Updated employee: ${oldEmp?.FirstName} ${oldEmp?.LastName} -> ${firstName} ${lastName} (ID: ${employeeId})`, req.ip);
+
     res.status(200).json({
       message: "Employee updated successfully",
       employeeId
@@ -530,11 +546,18 @@ exports.restoreEmployee = async (req, res) => {
     }
     // --- Duplicate Check End ---
 
+    const oldRes = await sql.query`SELECT * FROM Employees WHERE Id = ${id}`;
+    const oldEmp = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Employees
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Employees WHERE Id = ${id}`;
+    const newEmp = newRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_EMPLOYEE', `Restored employee (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Employee restored successfully" });
   } catch (error) {

@@ -1,4 +1,5 @@
 const sql = require("mssql");
+const auditService = require("../../services/auditService");
 
 // ============================================
 // GET ALL CREDIT VOUCHERS
@@ -18,15 +19,17 @@ exports.getAllCreditVouchers = async (req, res) => {
         t.VType AS vtype,
         t.VDate AS date,
         t.COA AS account, -- This holds the HeadCode
+        a.HeadName AS coaHeadName, -- Join to get HeadName
         cv.DebitAccountHead AS debitAccountHead,
-        cv.Amount AS amount,
+        ISNULL(cv.Amount, t.Credit + t.Debit) AS amount,
         t.Narration AS remark,
         t.Debit AS debit,
         t.Credit AS credit,
         t.IsActive AS isActive
       FROM Transactions t
       LEFT JOIN CreditVouchers cv ON t.VNo = cv.VNo
-      WHERE t.VType = 'CV'
+      LEFT JOIN Accounts a ON t.COAId = a.Id
+      WHERE t.VType IN ('CV', 'Receipt')
     `;
 
     if (!showInactive) {
@@ -168,6 +171,7 @@ exports.addCreditVoucher = async (req, res) => {
                 END
             `;
 
+        await auditService.logAction(userId, 'CREATE_CREDIT_VOUCHER', `Created Credit Voucher (VNo: ${vNo}, Amount: ${amount})`, req.ip);
         res.status(201).json({ message: "Credit Voucher created successfully", vNo });
     } catch (error) {
         console.error("ADD CREDIT VOUCHER ERROR:", error);
@@ -185,6 +189,9 @@ exports.updateCreditVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         // FYId Lookup
         let fyId = 1; // Default
         const fyRes = await pool.request()
@@ -249,6 +256,9 @@ exports.updateCreditVoucher = async (req, res) => {
                 END
             `;
 
+        const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const updatedVoucher = updatedRes.recordset[0];
+        await auditService.logAction(userId, 'UPDATE_CREDIT_VOUCHER', `Updated Credit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
         res.status(200).json({ message: "Credit Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE CREDIT VOUCHER ERROR:", error);
@@ -266,6 +276,9 @@ exports.deleteCreditVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("DeleteUserId", sql.Int, userId)
@@ -285,6 +298,9 @@ exports.deleteCreditVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoDel AND VType = 'CV';
             `;
 
+        const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const deletedVoucher = deletedRes.recordset[0];
+        await auditService.logAction(userId, 'DELETE_CREDIT_VOUCHER', `Deleted Credit Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
         res.status(200).json({ message: "Credit Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE CREDIT VOUCHER ERROR:", error);
@@ -302,6 +318,9 @@ exports.restoreCreditVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("UpdateUserId", sql.Int, userId)
@@ -321,6 +340,9 @@ exports.restoreCreditVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoRes AND VType = 'CV';
             `;
 
+        const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
+        const restoredVoucher = restoredRes.recordset[0];
+        await auditService.logAction(userId, 'RESTORE_CREDIT_VOUCHER', `Restored Credit Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
         res.status(200).json({ message: "Credit Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE CREDIT VOUCHER ERROR:", error);

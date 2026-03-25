@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL COUNTRIES (Simple List)
@@ -74,6 +75,7 @@ exports.addCountry = async (req, res) => {
     `;
     
     const newId = result.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_COUNTRY', `Created Country: ${name} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "Country added successfully",
         record: { id: newId, name }
@@ -98,6 +100,9 @@ exports.updateCountry = async (req, res) => {
         return res.status(409).json({ message: "Country with this name already exists" });
     }
 
+    const oldRes = await sql.query`SELECT name FROM Countries WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
+
     await sql.query`
       UPDATE Countries 
       SET 
@@ -106,6 +111,7 @@ exports.updateCountry = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'UPDATE_COUNTRY', `Updated Country: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Country updated successfully" });
   } catch (error) {
     res.status(500).json({ message: "Server error" });
@@ -128,6 +134,7 @@ exports.deleteCountry = async (req, res) => {
         deleteUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'DELETE_COUNTRY', `Deleted Country (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Country deleted successfully" });
   } catch (error) {
     res.status(500).json({ message: "Server error" });
@@ -220,6 +227,7 @@ exports.restoreCountry = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_COUNTRY', `Restored Country: ${countryName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Country restored successfully" });
 
   } catch (error) {

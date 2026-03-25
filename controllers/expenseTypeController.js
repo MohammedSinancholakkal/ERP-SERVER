@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL EXPENSE TYPES
@@ -67,6 +68,7 @@ exports.addExpenseType = async (req, res) => {
       VALUES (${typeName}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_EXPENSETYPE', `Created Expense Type: ${typeName}`, req.ip);
     res.status(201).json({ message: "Expense type added successfully" });
   } catch (error) {
     console.log("ADD EXPENSE TYPE ERROR:", error);
@@ -85,6 +87,9 @@ exports.updateExpenseType = async (req, res) => {
     return res.status(400).json({ message: "Type name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT typeName FROM ExpenseTypes WHERE typeId = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].typeName : "Unknown";
+
     await sql.query`
       UPDATE ExpenseTypes
       SET 
@@ -94,6 +99,7 @@ exports.updateExpenseType = async (req, res) => {
       WHERE typeId = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_EXPENSETYPE', `Updated Expense Type: ${oldName} -> ${typeName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Expense type updated successfully" });
   } catch (error) {
     console.log("UPDATE EXPENSE TYPE ERROR:", error);
@@ -118,6 +124,7 @@ exports.deleteExpenseType = async (req, res) => {
       WHERE typeId = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_EXPENSETYPE', `Deleted Expense Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Expense type deleted successfully" });
   } catch (error) {
     console.log("DELETE EXPENSE TYPE ERROR:", error);
@@ -237,6 +244,7 @@ exports.restoreExpenseType = async (req, res) => {
       WHERE typeId = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_EXPENSETYPE', `Restored Expense Type: ${typeName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Expense type restored successfully" });
   } catch (error) {
     console.log("RESTORE EXPENSE TYPE ERROR:", error);

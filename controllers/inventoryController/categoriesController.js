@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL CATEGORIES (Paginated)
@@ -71,6 +72,7 @@ exports.addCategory = async (req, res) => {
 
     const newId = result.recordset[0].Id;
 
+    await auditService.logAction(userId, 'CREATE_CATEGORY', `Created Category: ${name}`, req.ip);
     res.status(200).json({ 
         message: "Category added successfully",
         record: { id: newId, name, description, parentCategoryId }
@@ -91,6 +93,9 @@ exports.updateCategory = async (req, res) => {
   const { name, description, parentCategoryId, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM Categories WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE Categories 
       SET 
@@ -102,6 +107,7 @@ exports.updateCategory = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_CATEGORY', `Updated Category: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category updated successfully" });
 
   } catch (error) {
@@ -128,6 +134,7 @@ exports.deleteCategory = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_CATEGORY', `Deleted Category (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category deleted successfully" });
 
   } catch (error) {
@@ -229,6 +236,7 @@ exports.restoreCategory = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_CATEGORY', `Restored Category: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category restored successfully" });
 
   } catch (error) {

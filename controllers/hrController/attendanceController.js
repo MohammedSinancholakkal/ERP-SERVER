@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL ATTENDANCE (Paginated)
@@ -73,6 +74,7 @@ exports.addAttendance = async (req, res) => {
       )
     `;
 
+    await auditService.logAction(userId, 'CREATE_ATTENDANCE', `Added attendance for Employee ID: ${employeeId}`, req.ip);
     res.status(200).json({ message: "Attendance added successfully" });
 
   } catch (error) {
@@ -90,6 +92,9 @@ exports.updateAttendance = async (req, res) => {
   const { employeeId, checkIn, checkOut, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const oldAtt = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Attendance
       SET
@@ -100,6 +105,10 @@ exports.updateAttendance = async (req, res) => {
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const newAtt = newRes.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_ATTENDANCE', `Updated attendance: Employee ${oldAtt?.EmployeeId} -> ${employeeId} (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Attendance updated successfully" });
 
@@ -118,6 +127,9 @@ exports.deleteAttendance = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const oldAtt = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Attendance
       SET
@@ -126,6 +138,10 @@ exports.deleteAttendance = async (req, res) => {
         DeleteUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const newAtt = newRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_ATTENDANCE', `Deleted attendance (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Attendance deleted successfully" });
 
@@ -234,6 +250,9 @@ exports.restoreAttendance = async (req, res) => {
     }
     // --- Duplicate Check End ---
 
+    const oldRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const oldAtt = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Attendance
       SET
@@ -242,6 +261,10 @@ exports.restoreAttendance = async (req, res) => {
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Attendance WHERE Id = ${id}`;
+    const newAtt = newRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_ATTENDANCE', `Restored attendance (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Attendance restored successfully" });
 

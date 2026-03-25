@@ -1,5 +1,6 @@
 const sql = require("../db/dbConfig");
 const uploadSignature = require("../middleware/multerConfig");
+const auditService = require("../services/auditService");
 
 exports.uploadSignature = uploadSignature;
 
@@ -123,6 +124,7 @@ exports.addSettings = async (req, res) => {
     `;
 
     const settings = await getSettingsById(result.recordset[0].Id);
+    await auditService.logAction(parsedUserId, 'CREATE_SETTINGS', `Created Settings for Company: ${companyName}`, req.ip);
     res.status(200).json(settings);
   } catch (error) {
     console.error("ADD SETTINGS ERROR:", error);
@@ -166,6 +168,8 @@ exports.updateSettings = async (req, res) => {
     : req.body.faviconPath;
 
   try {
+    const oldSettings = await getSettingsById(id);
+
     await sql.query`
       UPDATE Settings
       SET 
@@ -189,6 +193,7 @@ exports.updateSettings = async (req, res) => {
     `;
 
     const settings = await getSettingsById(id);
+    await auditService.logAction(parsedUserId, 'UPDATE_SETTINGS', `Updated Settings: ${oldSettings?.companyName} -> ${companyName}`, req.ip);
     res.status(200).json(settings);
   } catch (error) {
     console.error("UPDATE SETTINGS ERROR:", error);

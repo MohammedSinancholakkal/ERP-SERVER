@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL EXPENSES (Paginated)
@@ -55,6 +56,7 @@ exports.addExpense = async (req, res) => {
       (${expenseTypeId}, ${date}, ${amount}, ${paymentAccount}, ${vno}, ${userId}, 1)
     `;
 
+    await auditService.logAction(userId, 'CREATE_EXPENSE', `Created Expense (Amount: ${amount}, Account: ${paymentAccount})`, req.ip);
     res.status(200).json({ message: "Expense added successfully" });
   } catch (error) {
     console.error("ADD EXPENSE ERROR:", error);
@@ -70,6 +72,9 @@ exports.updateExpense = async (req, res) => {
   const { expenseTypeId, date, amount, paymentAccount, vno, userId } = req.body;
 
   try {
+    const currentRes = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
+    const currentExpense = currentRes.recordset[0];
+
     await sql.query`
       UPDATE Expenses
       SET 
@@ -82,6 +87,10 @@ exports.updateExpense = async (req, res) => {
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const updatedRes = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
+    const updatedExpense = updatedRes.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_EXPENSE', `Updated Expense (ID: ${id}) - Amount: ${amount}`, req.ip, currentExpense, updatedExpense);
 
     res.status(200).json({ message: "Expense updated successfully" });
   } catch (error) {
@@ -98,6 +107,9 @@ exports.deleteExpense = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const currentRes = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
+    const currentExpense = currentRes.recordset[0];
+
     await sql.query`
       UPDATE Expenses
       SET 
@@ -106,6 +118,10 @@ exports.deleteExpense = async (req, res) => {
         DeleteUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const deletedRes = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
+    const deletedExpense = deletedRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_EXPENSE', `Deleted Expense (ID: ${id})`, req.ip, currentExpense, deletedExpense);
 
     res.status(200).json({ message: "Expense deleted successfully" });
   } catch (error) {
@@ -183,9 +199,10 @@ exports.restoreExpense = async (req, res) => {
 
   try {
     // Get the expense details to be restored
-    const itemToRestore = await sql.query`SELECT ExpenseTypeId, Date, Amount, PaymentAccount FROM Expenses WHERE Id = ${id}`;
+    const itemToRestore = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
     if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { ExpenseTypeId, Date, Amount, PaymentAccount } = itemToRestore.recordset[0];
+    const currentExpense = itemToRestore.recordset[0];
+    const { ExpenseTypeId, Date, Amount, PaymentAccount } = currentExpense;
 
     // Check for active duplicates
     // Compare date at the day level
@@ -210,6 +227,10 @@ exports.restoreExpense = async (req, res) => {
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+
+    const restoredRes = await sql.query`SELECT * FROM Expenses WHERE Id = ${id}`;
+    const restoredExpense = restoredRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_EXPENSE', `Restored Expense (ID: ${id})`, req.ip, currentExpense, restoredExpense);
 
     res.status(200).json({ message: "Expense restored successfully" });
 

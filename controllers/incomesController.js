@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL INCOMES
@@ -63,6 +64,7 @@ exports.addIncome = async (req, res) => {
       VALUES (${incomeName}, ${description}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_INCOME', `Created Income: ${incomeName}`, req.ip);
     res.status(201).json({ message: "Income added successfully" });
   } catch (error) {
     console.log("ADD INCOME ERROR:", error);
@@ -81,6 +83,9 @@ exports.updateIncome = async (req, res) => {
     return res.status(400).json({ message: "Income name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT IncomeName FROM Incomes WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].IncomeName : "Unknown";
+
     await sql.query`
       UPDATE Incomes
       SET 
@@ -91,6 +96,7 @@ exports.updateIncome = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_INCOME', `Updated Income: ${oldName} -> ${incomeName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income updated successfully" });
   } catch (error) {
     console.log("UPDATE INCOME ERROR:", error);
@@ -115,6 +121,7 @@ exports.deleteIncome = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_INCOME', `Deleted Income (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income deleted successfully" });
   } catch (error) {
     console.log("DELETE INCOME ERROR:", error);
@@ -239,6 +246,7 @@ exports.restoreIncome = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_INCOME', `Restored Income: ${IncomeName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income restored successfully" });
 
   } catch (error) {

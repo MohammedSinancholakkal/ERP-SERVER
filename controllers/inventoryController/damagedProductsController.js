@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // ================================
 // GET ALL (ACTIVE + JOIN + PAGINATION)
@@ -137,6 +138,7 @@ exports.addDamaged = async (req, res) => {
       WHERE Id = ${productId}
     `;
 
+    await auditService.logAction(userId, 'CREATE_DAMAGED_PRODUCT', `Created Damaged Product Entry (Product ID: ${productId}, Qty: ${qty})`, req.ip);
     res.status(201).json({ message: "Damaged product added and stock deducted" });
 
   } catch (err) {
@@ -229,6 +231,7 @@ exports.updateDamaged = async (req, res) => {
         `;
     }
 
+    await auditService.logAction(userId, 'UPDATE_DAMAGED_PRODUCT', `Updated Damaged Product Entry (ID: ${id}) - Qty changed from ${oldQty} to ${newQty}`, req.ip);
     res.json({ message: "Damaged product updated successfully" });
 
   } catch (err) {
@@ -269,6 +272,7 @@ exports.deleteDamaged = async (req, res) => {
         `;
     }
 
+    await auditService.logAction(userId, 'DELETE_DAMAGED_PRODUCT', `Deleted Damaged Product Entry (ID: ${id})`, req.ip);
     res.json({ message: "Damaged product deleted and stock restored" });
 
   } catch (err) {
@@ -404,6 +408,7 @@ exports.restoreDamaged = async (req, res) => {
         `;
     }
 
+    await auditService.logAction(userId, 'RESTORE_DAMAGED_PRODUCT', `Restored Damaged Product Entry (ID: ${id})`, req.ip);
     res.json({ message: "Damaged product restored successfully" });
 
   } catch (err) {

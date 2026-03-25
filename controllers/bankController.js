@@ -1,6 +1,7 @@
 const sql = require("mssql");
 const fs = require("fs");
 const path = require("path");
+const auditService = require("../services/auditService");
 
 // Delete old file from disk
 const deleteFile = (filePath) => {
@@ -226,6 +227,7 @@ exports.addBank = async (req, res) => {
     await syncBankToCOA(transaction, newBankId, BankName, isCompany === 1 || isInternal === 1, userId);
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_BANK', `Created Bank: ${BankName} (ID: ${newBankId})`, req.ip);
     res.status(201).json({ message: "Bank added successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
@@ -248,9 +250,10 @@ exports.updateBank = async (req, res) => {
   try {
     const old = await pool.request()
       .input('id', sql.Int, id)
-      .query("SELECT SignaturePicture FROM Banks WHERE Id = @id");
+      .query("SELECT BankName, SignaturePicture FROM Banks WHERE Id = @id");
 
     const oldImage = old.recordset[0]?.SignaturePicture;
+    const oldBankName = old.recordset[0]?.BankName || "Unknown";
     let finalImage = oldImage;
 
     // New image uploaded
@@ -308,6 +311,7 @@ exports.updateBank = async (req, res) => {
     // Replace file physically
     if (req.file && oldImage) deleteFile(oldImage);
 
+    await auditService.logAction(userId, 'UPDATE_BANK', `Updated Bank: ${oldBankName} -> ${BankName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Bank updated successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
@@ -359,6 +363,7 @@ exports.deleteBank = async (req, res) => {
 
     if (oldImage) deleteFile(oldImage);
 
+    await auditService.logAction(userId, 'DELETE_BANK', `Deleted Bank (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Bank deleted successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
@@ -495,6 +500,7 @@ exports.restoreBank = async (req, res) => {
     
     await transaction.commit();
 
+    await auditService.logAction(userId, 'RESTORE_BANK', `Restored Bank: ${BankName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Bank restored successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();

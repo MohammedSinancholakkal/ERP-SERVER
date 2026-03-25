@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL SHIPPERS
@@ -76,6 +77,7 @@ const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
         VALUES (${companyName.trim()}, ${digits}, ${userId})
       `;
   
+      await auditService.logAction(userId, 'CREATE_SHIPPER', `Created Shipper: ${companyName.trim()}`, req.ip);
       res.status(201).json({ message: "Shipper added successfully" });
     } catch (error) {
       console.log("ADD SHIPPER ERROR:", error);
@@ -102,6 +104,9 @@ const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
       return res.status(400).json({ message: "Phone must contain at least 10 digits" });
   
     try {
+      const oldRes = await sql.query`SELECT CompanyName FROM Shippers WHERE Id = ${id}`;
+      const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CompanyName : "Unknown";
+
       await sql.query`
         UPDATE Shippers
         SET 
@@ -112,6 +117,7 @@ const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
         WHERE Id = ${id}
       `;
   
+      await auditService.logAction(userId, 'UPDATE_SHIPPER', `Updated Shipper: ${oldName} -> ${companyName.trim()} (ID: ${id})`, req.ip);
       res.status(200).json({ message: "Shipper updated successfully" });
     } catch (error) {
       console.log("UPDATE SHIPPER ERROR:", error);
@@ -137,6 +143,7 @@ exports.deleteShipper = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_SHIPPER', `Deleted Shipper (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Shipper deleted successfully" });
   } catch (error) {
     console.log("DELETE SHIPPER ERROR:", error);
@@ -234,6 +241,7 @@ exports.restoreShipper = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_SHIPPER', `Restored Shipper: ${CompanyName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Shipper restored successfully" });
 
   } catch (error) {

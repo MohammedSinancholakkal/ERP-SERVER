@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL SUPPLIER GROUPS
@@ -67,6 +68,7 @@ exports.addSupplierGroup = async (req, res) => {
       VALUES (${groupName.trim()}, ${description}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_SUPPLIER_GROUP', `Created Supplier Group: ${groupName.trim()}`, req.ip);
     res.status(201).json({ message: "Supplier group added successfully" });
   } catch (error) {
     console.log("ADD SUPPLIER GROUP ERROR:", error);
@@ -85,6 +87,9 @@ exports.updateSupplierGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT GroupName FROM SupplierGroups WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].GroupName : "Unknown";
+
     await sql.query`
       UPDATE SupplierGroups
       SET 
@@ -95,6 +100,7 @@ exports.updateSupplierGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_SUPPLIER_GROUP', `Updated Supplier Group: ${oldName} -> ${groupName.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group updated successfully" });
   } catch (error) {
     console.log("UPDATE SUPPLIER GROUP ERROR:", error);
@@ -119,6 +125,7 @@ exports.deleteSupplierGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_SUPPLIER_GROUP', `Deleted Supplier Group (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group deleted successfully" });
   } catch (error) {
     console.log("DELETE SUPPLIER GROUP ERROR:", error);
@@ -217,6 +224,7 @@ exports.restoreSupplierGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_SUPPLIER_GROUP', `Restored Supplier Group: ${GroupName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group restored successfully" });
 
   } catch (error) {

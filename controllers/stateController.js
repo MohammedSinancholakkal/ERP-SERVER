@@ -153,6 +153,7 @@
 
 
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL STATES (Simple List)
@@ -254,6 +255,7 @@ exports.addState = async (req, res) => {
     `;
 
     const newId = result.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_STATE', `Created State: ${name} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "State added successfully",
         record: { id: newId, name, countryId } 
@@ -278,6 +280,9 @@ exports.updateState = async (req, res) => {
         return res.status(409).json({ message: "State with this name already exists in the selected country" });
     }
 
+    const oldRes = await sql.query`SELECT name FROM States WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
+
     await sql.query`
       UPDATE States
       SET 
@@ -287,6 +292,7 @@ exports.updateState = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'UPDATE_STATE', `Updated State: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State updated" });
   } catch (error) {
     res.status(500).json({ message: "Error updating state" });
@@ -309,6 +315,7 @@ exports.deleteState = async (req, res) => {
         deleteUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'DELETE_STATE', `Deleted State (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State deleted" });
   } catch (error) {
     res.status(500).json({ message: "Error deleting state" });
@@ -398,6 +405,7 @@ exports.restoreState = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'RESTORE_STATE', `Restored State (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State restored successfully" });
   } catch (error) {
     console.error("RESTORE STATE ERROR:", error);

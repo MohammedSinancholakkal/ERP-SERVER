@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL CUSTOMERS (Paginated)
@@ -216,6 +217,7 @@ exports.addCustomer = async (req, res) => {
 
     const newId = result.recordset[0].Id;
 
+    await auditService.logAction(userId, 'CREATE_CUSTOMER', `Created Customer: ${name}`, req.ip);
     res.status(200).json({ 
         message: "Customer added successfully",
         record: { id: newId, name, email, phone }
@@ -259,6 +261,9 @@ exports.updateCustomer = async (req, res) => {
   } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM Customers WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE Customers
       SET
@@ -288,6 +293,7 @@ exports.updateCustomer = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_CUSTOMER', `Updated Customer: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer updated successfully" });
 
   } catch (error) {
@@ -314,6 +320,7 @@ exports.deleteCustomer = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_CUSTOMER', `Deleted Customer (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer deleted successfully" });
 
   } catch (error) {
@@ -488,6 +495,9 @@ exports.restoreCustomer = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    const restoredName = await sql.query`SELECT Name FROM Customers WHERE Id = ${id}`;
+    const finalName = restoredName.recordset.length > 0 ? restoredName.recordset[0].Name : "Unknown";
+    await auditService.logAction(userId, 'RESTORE_CUSTOMER', `Restored Customer: ${finalName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer restored successfully" });
 
   } catch (error) {

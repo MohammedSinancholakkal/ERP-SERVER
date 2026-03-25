@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 /**
  * GET roles assigned to a user
@@ -62,6 +63,7 @@ exports.setUserRoles = async (req, res) => {
       `;
     }
 
+    await auditService.logAction(updateUserId || 1, 'UPDATE_USER_ROLES', `Updated roles for User ${id}`, req.ip);
     res.status(200).json({ message: "User roles updated successfully" });
   } catch (error) {
     console.error("SET USER ROLES ERROR:", error);

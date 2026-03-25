@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL TAX TYPES (Simple List)
@@ -60,6 +61,7 @@ exports.addTaxType = async (req, res) => {
       INSERT INTO TaxTypes (name, isInterState, percentage, insertUserId)
       VALUES (${name}, ${isInterState}, ${req.body.percentage || 0}, ${userId})
     `;
+    await auditService.logAction(userId, 'CREATE_TAXTYPE', `Created Tax Type: ${name}`, req.ip);
     res.status(200).json({ message: "Tax Type added successfully" });
   } catch (error) {
     console.error("ADD TAX TYPE ERROR:", error);
@@ -75,6 +77,9 @@ exports.updateTaxType = async (req, res) => {
   const { name, isInterState, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT name FROM TaxTypes WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
+
     await sql.query`
       UPDATE TaxTypes 
       SET 
@@ -85,6 +90,7 @@ exports.updateTaxType = async (req, res) => {
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'UPDATE_TAXTYPE', `Updated Tax Type: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type updated successfully" });
   } catch (error) {
     console.error("UPDATE TAX TYPE ERROR:", error);
@@ -108,6 +114,7 @@ exports.deleteTaxType = async (req, res) => {
         deleteUserId = ${userId}
       WHERE id = ${id}
     `;
+    await auditService.logAction(userId, 'DELETE_TAXTYPE', `Deleted Tax Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type deleted successfully" });
   } catch (error) {
     console.error("DELETE TAX TYPE ERROR:", error);
@@ -195,6 +202,7 @@ exports.restoreTaxType = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_TAXTYPE', `Restored Tax Type: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type restored successfully" });
 
   } catch (error) {

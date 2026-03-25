@@ -1,5 +1,6 @@
 const sql = require("mssql");
 const accountingService = require("../../services/accountingService");
+const auditService = require("../../services/auditService");
 const { generateVNo } = require("../../utils/vnoUtils");
 
 // ============================================
@@ -151,6 +152,7 @@ exports.addJournalVoucher = async (req, res) => {
              console.warn(`Journal Voucher created but Transaction skipped: Account IDs not found.`);
         }
 
+        await auditService.logAction(userId, 'CREATE_JOURNAL_VOUCHER', `Created Journal Voucher (VNo: ${vNo}, Amount: ${amount})`, req.ip);
         res.status(201).json({ message: "Journal Voucher created successfully", vNo });
     } catch (error) {
         console.error("ADD JOURNAL VOUCHER ERROR:", error);
@@ -167,7 +169,10 @@ exports.updateJournalVoucher = async (req, res) => {
 
     try {
         const pool = await sql.connect();
-        
+
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("Date", sql.DateTime, date)
@@ -193,6 +198,9 @@ exports.updateJournalVoucher = async (req, res) => {
         // I will align with the previous code behavior, or we can update transactions if required. 
         // For simplicity, keeping it the same as before if there is no specific requirement.
 
+        const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const updatedVoucher = updatedRes.recordset[0];
+        await auditService.logAction(userId, 'UPDATE_JOURNAL_VOUCHER', `Updated Journal Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
         res.status(200).json({ message: "Journal Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE JOURNAL VOUCHER ERROR:", error);
@@ -210,6 +218,9 @@ exports.deleteJournalVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("DeleteUserId", sql.Int, userId)
@@ -222,6 +233,9 @@ exports.deleteJournalVoucher = async (req, res) => {
                 WHERE Id = @Id
             `;
 
+        const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const deletedVoucher = deletedRes.recordset[0];
+        await auditService.logAction(userId, 'DELETE_JOURNAL_VOUCHER', `Deleted Journal Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
         res.status(200).json({ message: "Journal Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE JOURNAL VOUCHER ERROR:", error);
@@ -239,6 +253,9 @@ exports.restoreJournalVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("UpdateUserId", sql.Int, userId)
@@ -251,6 +268,9 @@ exports.restoreJournalVoucher = async (req, res) => {
                 WHERE Id = @Id
             `;
 
+        const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
+        const restoredVoucher = restoredRes.recordset[0];
+        await auditService.logAction(userId, 'RESTORE_JOURNAL_VOUCHER', `Restored Journal Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
         res.status(200).json({ message: "Journal Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE JOURNAL VOUCHER ERROR:", error);

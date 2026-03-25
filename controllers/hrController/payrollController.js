@@ -1,4 +1,6 @@
 const sql = require("../../db/dbConfig");
+const accountingService = require("../../services/accountingService");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL PAYROLLS (Paginated)
@@ -171,6 +173,8 @@ exports.addPayroll = async (req, res) => {
           ESIEmployee, ESIEmployer,
           PayrollYear, PayrollMonth,
           TotalDaysInMonth, WorkedDays,
+          SalaryPaymentStatus,
+          FixedMonthlyBasic,
           InsertUserId
         )
         OUTPUT INSERTED.Id
@@ -184,11 +188,62 @@ exports.addPayroll = async (req, res) => {
           ${emp.esiEmployee || 0}, ${emp.esiEmployer || 0},
           ${emp.payrollYear || null}, ${emp.payrollMonth || ''},
           ${emp.totalDaysInMonth || 0}, ${emp.workedDays || 0},
+          ${emp.salaryPaymentStatus || 'Pending'},
+          ${emp.fixedMonthlyBasic || 0},
           ${userId}
         )
       `;
 
       const payrollDetailId = detailResult.recordset[0].Id;
+
+      // -------- CREATE TRANSACTION IF PAID
+      if (emp.salaryPaymentStatus === 'Paid') {
+          try {
+              // 1. Get Salaries & Wages Head
+              const headRes = await transaction.request().query("SELECT Id FROM Accounts WHERE HeadCode = '408'");
+              const salaryHeadId = headRes.recordset[0]?.Id;
+
+              // 2. Get PF & ESI Contribution Head
+              const pfEsiHeadRes = await transaction.request().query("SELECT Id FROM Accounts WHERE HeadCode = '410'");
+              const pfEsiHeadId = pfEsiHeadRes.recordset[0]?.Id;
+
+              const totalPFESI = Number(emp.pfEmployer || 0) + Number(emp.esiEmployer || 0);
+
+
+
+              if (salaryHeadId === undefined || salaryHeadId === null) {
+                  throw new Error("Salary Head (408) not found in Chart of Accounts.");
+              }
+              if (cashBankId === undefined || cashBankId === null) {
+                  throw new Error("Cash/Bank Account missing for payroll transaction.");
+              }
+
+              const entries = [
+                  { coaId: salaryHeadId, debit: Number(emp.takeHomePay), credit: 0, narration: `Salary Paid - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` },
+                  { coaId: cashBankId, debit: 0, credit: Number(emp.takeHomePay), narration: `Salary Paid - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` }
+              ];
+
+              if (pfEsiHeadId && totalPFESI > 0) {
+                  entries.push({ coaId: pfEsiHeadId, debit: totalPFESI, credit: 0, narration: `PF & ESI Contribution - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` });
+                  entries.push({ coaId: cashBankId, debit: 0, credit: totalPFESI, narration: `PF & ESI Contribution - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` });
+              }
+
+              await accountingService.recordTransaction({
+                  vNo: number,
+                  vType: 'Payroll',
+                  date: paymentDate,
+                  entries: entries,
+                  userId,
+                  transaction,
+                  insertDate: new Date()
+              });
+          } catch (txError) {
+              console.error("TRANSACTION ERROR FOR PAID SALARY:", txError);
+              // We might want to throw or just log? Since it's inside the main transaction, 
+              // failing here will rollback the entire payroll. This is probably desired.
+              throw txError;
+          }
+      }
 
       // -------- INCOMES
       for (const inc of emp.incomes || []) {
@@ -226,6 +281,7 @@ exports.addPayroll = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_PAYROLL', `Created Payroll (No: ${number})`, req.ip);
     res.status(200).json({ message: "Payroll created successfully", payrollId });
 
   } catch (error) {
@@ -258,6 +314,9 @@ exports.updatePayroll = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const oldRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const oldPayroll = oldRes.recordset[0];
+
     await transaction.begin();
 
     // 1. Update Payroll Master
@@ -310,6 +369,8 @@ exports.updatePayroll = async (req, res) => {
           ESIEmployee, ESIEmployer,
           PayrollYear, PayrollMonth,
           TotalDaysInMonth, WorkedDays,
+          SalaryPaymentStatus,
+          FixedMonthlyBasic,
           InsertUserId
         )
         OUTPUT INSERTED.Id
@@ -323,11 +384,60 @@ exports.updatePayroll = async (req, res) => {
           ${emp.esiEmployee || 0}, ${emp.esiEmployer || 0},
           ${emp.payrollYear || null}, ${emp.payrollMonth || ''},
           ${emp.totalDaysInMonth || 0}, ${emp.workedDays || 0},
+          ${emp.salaryPaymentStatus || 'Pending'},
+          ${emp.fixedMonthlyBasic || 0},
           ${userId}
         )
       `;
 
       const payrollDetailId = detailResult.recordset[0].Id;
+
+      // -------- CREATE TRANSACTION IF PAID
+      if (emp.salaryPaymentStatus === 'Paid') {
+          try {
+               // 1. Get Salaries & Wages Head
+               const headRes = await transaction.request().query("SELECT Id FROM Accounts WHERE HeadCode = '408'");
+               const salaryHeadId = headRes.recordset[0]?.Id;
+
+               // 2. Get PF & ESI Contribution Head
+               const pfEsiHeadRes = await transaction.request().query("SELECT Id FROM Accounts WHERE HeadCode = '410'");
+               const pfEsiHeadId = pfEsiHeadRes.recordset[0]?.Id;
+
+               const totalPFESI = Number(emp.pfEmployer || 0) + Number(emp.esiEmployer || 0);
+
+
+
+               if (salaryHeadId === undefined || salaryHeadId === null) {
+                   throw new Error("Salary Head (408) not found in Chart of Accounts.");
+               }
+               if (cashBankId === undefined || cashBankId === null) {
+                   throw new Error("Cash/Bank Account missing for payroll transaction.");
+               }
+
+               const entries = [
+                   { coaId: salaryHeadId, debit: Number(emp.takeHomePay), credit: 0, narration: `Salary Paid - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` },
+                   { coaId: cashBankId, debit: 0, credit: Number(emp.takeHomePay), narration: `Salary Paid - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` }
+               ];
+
+               if (pfEsiHeadId && totalPFESI > 0) {
+                   entries.push({ coaId: pfEsiHeadId, debit: totalPFESI, credit: 0, narration: `PF & ESI Contribution - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` });
+                   entries.push({ coaId: cashBankId, debit: 0, credit: totalPFESI, narration: `PF & ESI Contribution - ${emp.employeeName} (${emp.payrollMonth} ${emp.payrollYear})` });
+               }
+
+               await accountingService.recordTransaction({
+                   vNo: number,
+                   vType: 'Payroll',
+                   date: paymentDate,
+                   entries: entries,
+                   userId,
+                   transaction,
+                   insertDate: new Date()
+               });
+          } catch (txError) {
+               console.error("TRANSACTION ERROR FOR PAID SALARY:", txError);
+               throw txError;
+          }
+      }
 
       for (const inc of emp.incomes || []) {
         const incReq = new sql.Request(transaction);
@@ -363,6 +473,11 @@ exports.updatePayroll = async (req, res) => {
     }
 
     await transaction.commit();
+
+    const newRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const newPayroll = newRes.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_PAYROLL', `Updated Payroll: ${oldPayroll?.Number} -> ${number} (ID: ${id})`, req.ip);
+
     res.status(200).json({ message: "Payroll updated successfully" });
 
   } catch (error) {
@@ -380,6 +495,9 @@ exports.deletePayroll = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const oldPayroll = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Payroll
       SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId}
@@ -391,6 +509,10 @@ exports.deletePayroll = async (req, res) => {
       SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId}
       WHERE PayrollId = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const newPayroll = newRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_PAYROLL', `Deleted Payroll (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Payroll deleted successfully" });
 
@@ -452,6 +574,9 @@ exports.restorePayroll = async (req, res) => {
      }
      // --- Duplicate Check End ---
 
+    const oldRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const oldPayroll = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Payroll
       SET
@@ -464,6 +589,10 @@ exports.restorePayroll = async (req, res) => {
       SET IsActive = 1
       WHERE PayrollId = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Payroll WHERE Id = ${id}`;
+    const newPayroll = newRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_PAYROLL', `Restored Payroll (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Payroll restored successfully" });
 

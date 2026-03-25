@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL SUPPLIERS (Paginated)
@@ -206,6 +207,7 @@ exports.addSupplier = async (req, res) => {
 
     const newId = result.recordset[0].Id;
 
+    await auditService.logAction(userId, 'CREATE_SUPPLIER', `Created Supplier: ${companyName}`, req.ip);
     res.status(200).json({ 
         message: "Supplier added successfully",
         record: { id: newId, companyName, email, phone }
@@ -248,6 +250,9 @@ exports.updateSupplier = async (req, res) => {
   } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT CompanyName FROM Suppliers WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CompanyName : "Unknown";
+
     await sql.query`
       UPDATE Suppliers
       SET
@@ -276,6 +281,7 @@ exports.updateSupplier = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_SUPPLIER', `Updated Supplier: ${oldName} -> ${companyName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier updated successfully" });
   } catch (error) {
     console.error("UPDATE SUPPLIER ERROR:", error);
@@ -302,6 +308,7 @@ exports.deleteSupplier = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_SUPPLIER', `Deleted Supplier (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier deleted successfully" });
   } catch (error) {
     console.error("DELETE SUPPLIER ERROR:", error);
@@ -469,6 +476,7 @@ exports.restoreSupplier = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_SUPPLIER', `Restored Supplier: ${CompanyName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier restored successfully" });
   } catch (error) {
     console.error("RESTORE SUPPLIER ERROR:", error);

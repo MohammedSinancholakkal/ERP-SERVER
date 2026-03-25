@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL MEETING TYPES
@@ -68,6 +69,7 @@ exports.addMeetingType = async (req, res) => {
       VALUES (${name.trim()}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_MEETING_TYPE', `Created Meeting Type: ${name.trim()}`, req.ip);
     res.status(201).json({ message: "Meeting type added successfully" });
   } catch (error) {
     console.log("ADD MEETING TYPE ERROR:", error);
@@ -86,6 +88,9 @@ exports.updateMeetingType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM MeetingTypes WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE MeetingTypes
       SET Name = ${name.trim()},
@@ -94,6 +99,7 @@ exports.updateMeetingType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_MEETING_TYPE', `Updated Meeting Type: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting type updated successfully" });
   } catch (error) {
     console.log("UPDATE MEETING TYPE ERROR:", error);
@@ -117,6 +123,7 @@ exports.deleteMeetingType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_MEETING_TYPE', `Deleted Meeting Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting type deleted successfully" });
   } catch (error) {
     console.log("DELETE MEETING TYPE ERROR:", error);
@@ -179,6 +186,7 @@ exports.restoreMeetingType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_MEETING_TYPE', `Restored Meeting Type: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting type restored successfully" });
 
   } catch (error) {

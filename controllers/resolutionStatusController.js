@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL RESOLUTION STATUSES
@@ -66,6 +67,7 @@ exports.addResolutionStatus = async (req, res) => {
       VALUES (${name.trim()}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_RESOLUTION_STATUS', `Created Resolution Status: ${name.trim()}`, req.ip);
     res.status(201).json({ message: "Resolution status added successfully" });
   } catch (error) {
     console.log("ADD RESOLUTION STATUS ERROR:", error);
@@ -84,6 +86,9 @@ exports.updateResolutionStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM ResolutionStatuses WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE ResolutionStatuses
       SET Name = ${name.trim()},
@@ -92,6 +97,7 @@ exports.updateResolutionStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_RESOLUTION_STATUS', `Updated Resolution Status: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Resolution status updated successfully" });
   } catch (error) {
     console.log("UPDATE RESOLUTION STATUS ERROR:", error);
@@ -115,6 +121,7 @@ exports.deleteResolutionStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_RESOLUTION_STATUS', `Deleted Resolution Status (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Resolution status deleted successfully" });
   } catch (error) {
     console.log("DELETE RESOLUTION STATUS ERROR:", error);
@@ -204,6 +211,7 @@ exports.restoreResolutionStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_RESOLUTION_STATUS', `Restored Resolution Status: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Resolution status restored successfully" });
 
   } catch (error) {

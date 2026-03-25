@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL ATTENDANCE STATUSES
@@ -67,6 +68,7 @@ exports.addAttendanceStatus = async (req, res) => {
       VALUES (${name.trim()}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_ATTENDANCE_STATUS', `Created Attendance Status: ${name.trim()}`, req.ip);
     res.status(201).json({ message: "Attendance status added successfully" });
   } catch (error) {
     console.log("ADD ATTENDANCE STATUS ERROR:", error);
@@ -85,6 +87,9 @@ exports.updateAttendanceStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM AttendanceStatuses WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE AttendanceStatuses
       SET Name = ${name.trim()},
@@ -93,6 +98,7 @@ exports.updateAttendanceStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_ATTENDANCE_STATUS', `Updated Attendance Status: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendance status updated successfully" });
   } catch (error) {
     console.log("UPDATE ATTENDANCE STATUS ERROR:", error);
@@ -116,6 +122,7 @@ exports.deleteAttendanceStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_ATTENDANCE_STATUS', `Deleted Attendance Status (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendance status deleted successfully" });
   } catch (error) {
     console.log("DELETE ATTENDANCE STATUS ERROR:", error);
@@ -207,6 +214,7 @@ exports.restoreAttendanceStatus = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_ATTENDANCE_STATUS', `Restored Attendance Status: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendance status restored successfully" });
   } catch (error) {
     console.log("RESTORE ATTENDANCE STATUS ERROR:", error);

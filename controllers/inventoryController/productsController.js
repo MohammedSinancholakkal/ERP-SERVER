@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL PRODUCTS (Paginated)
@@ -169,6 +170,7 @@ exports.addProduct = async (req, res) => {
 
     const newId = result.recordset[0].Id;
 
+    await auditService.logAction(userId, 'CREATE_PRODUCT', `Created Product: ${ProductName}`, req.ip);
     res.status(200).json({ 
         message: "Product added successfully",
         record: {
@@ -225,6 +227,9 @@ exports.updateProduct = async (req, res) => {
     // Ensure numeric or null
     const taxId = (TaxPercentageId && !isNaN(TaxPercentageId)) ? parseInt(TaxPercentageId) : null;
 
+    const oldRes = await sql.query`SELECT ProductName FROM Products WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].ProductName : "Unknown";
+
     await sql.query`
       UPDATE Products
       SET
@@ -249,6 +254,7 @@ exports.updateProduct = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_PRODUCT', `Updated Product: ${oldName} -> ${ProductName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Product updated successfully" });
 
   } catch (error) {
@@ -275,6 +281,7 @@ exports.deleteProduct = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_PRODUCT', `Deleted Product (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Product deleted successfully" });
 
   } catch (error) {
@@ -442,6 +449,7 @@ exports.restoreProduct = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_PRODUCT', `Restored Product: ${ProductName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Product restored successfully" });
 
   } catch (error) {

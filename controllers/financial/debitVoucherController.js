@@ -1,4 +1,5 @@
 const sql = require("mssql"); // Assuming mssql is the driver
+const auditService = require("../../services/auditService");
 
 // ============================================
 // GET ALL DEBIT VOUCHERS
@@ -18,12 +19,14 @@ exports.getAllDebitVouchers = async (req, res) => {
         t.VType AS vtype,
         t.VDate AS date,
         t.COA AS account, -- This holds the HeadCode
+        a.HeadName AS coaHeadName, -- Join to get HeadName
         t.Narration AS remark,
         t.Debit AS debit,
         t.Credit AS credit,
         t.IsActive AS isActive
       FROM Transactions t
-      WHERE t.VType = 'DV'
+      LEFT JOIN Accounts a ON t.COAId = a.Id
+      WHERE t.VType IN ('DV', 'Payment')
     `;
 
     if (!showInactive) {
@@ -165,6 +168,7 @@ exports.addDebitVoucher = async (req, res) => {
                 END
             `;
 
+        await auditService.logAction(userId, 'CREATE_DEBIT_VOUCHER', `Created Debit Voucher (VNo: ${vNo}, Amount: ${amount})`, req.ip);
         res.status(201).json({ message: "Debit Voucher created successfully", vNo });
     } catch (error) {
         console.error("ADD DEBIT VOUCHER ERROR:", error);
@@ -182,6 +186,9 @@ exports.updateDebitVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         // FYId Lookup
         let fyId = 1; // Default
         const fyRes = await pool.request()
@@ -249,6 +256,9 @@ exports.updateDebitVoucher = async (req, res) => {
                 END
             `;
 
+        const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const updatedVoucher = updatedRes.recordset[0];
+        await auditService.logAction(userId, 'UPDATE_DEBIT_VOUCHER', `Updated Debit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
         res.status(200).json({ message: "Debit Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE DEBIT VOUCHER ERROR:", error);
@@ -266,6 +276,9 @@ exports.deleteDebitVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("DeleteUserId", sql.Int, userId)
@@ -285,6 +298,9 @@ exports.deleteDebitVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoDel AND VType = 'DV';
             `;
 
+        const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const deletedVoucher = deletedRes.recordset[0];
+        await auditService.logAction(userId, 'DELETE_DEBIT_VOUCHER', `Deleted Debit Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
         res.status(200).json({ message: "Debit Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE DEBIT VOUCHER ERROR:", error);
@@ -302,6 +318,9 @@ exports.restoreDebitVoucher = async (req, res) => {
     try {
         const pool = await sql.connect();
         
+        const currentRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const currentVoucher = currentRes.recordset[0];
+
         await pool.request()
             .input("Id", sql.Int, id)
             .input("UpdateUserId", sql.Int, userId)
@@ -321,6 +340,9 @@ exports.restoreDebitVoucher = async (req, res) => {
                 WHERE VNo = @ExistingVNoRes AND VType = 'DV';
             `;
 
+        const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
+        const restoredVoucher = restoredRes.recordset[0];
+        await auditService.logAction(userId, 'RESTORE_DEBIT_VOUCHER', `Restored Debit Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
         res.status(200).json({ message: "Debit Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE DEBIT VOUCHER ERROR:", error);

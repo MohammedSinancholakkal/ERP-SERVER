@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL TERRITORIES (with Region Name)
@@ -88,6 +89,7 @@ exports.addTerritory = async (req, res) => {
     `;
 
     const newId = result.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_TERRITORY', `Created Territory: ${territoryDescription} (ID: ${newId})`, req.ip);
     res.status(201).json({ 
         message: "Territory added successfully",
         record: { id: newId, name: territoryDescription, regionId }
@@ -106,6 +108,9 @@ exports.updateTerritory = async (req, res) => {
   const { territoryDescription, regionId, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT territoryDescription FROM Territories WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].territoryDescription : "Unknown";
+
     await sql.query`
       UPDATE Territories
       SET 
@@ -116,6 +121,7 @@ exports.updateTerritory = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_TERRITORY', `Updated Territory: ${oldName} -> ${territoryDescription} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory updated successfully" });
   } catch (error) {
     console.log("UPDATE TERRITORY ERROR:", error);
@@ -140,6 +146,7 @@ exports.deleteTerritory = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_TERRITORY', `Deleted Territory (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory deleted successfully" });
   } catch (error) {
     console.log("DELETE TERRITORY ERROR:", error);
@@ -255,6 +262,7 @@ exports.restoreTerritory = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_TERRITORY', `Restored Territory: ${territoryDescription} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory restored successfully" });
   } catch (error) {
     console.log("RESTORE TERRITORY ERROR:", error);

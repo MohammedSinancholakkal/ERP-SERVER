@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL ATTENDEE TYPES
@@ -66,6 +67,7 @@ exports.addAttendeeType = async (req, res) => {
       VALUES (${name.trim()}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_ATTENDEE_TYPE', `Created Attendee Type: ${name.trim()}`, req.ip);
     res.status(201).json({ message: "Attendee type added successfully" });
   } catch (error) {
     console.log("ADD ATTENDEE TYPE ERROR:", error);
@@ -84,6 +86,9 @@ exports.updateAttendeeType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM AttendeeTypes WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE AttendeeTypes
       SET Name = ${name.trim()},
@@ -92,6 +97,7 @@ exports.updateAttendeeType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_ATTENDEE_TYPE', `Updated Attendee Type: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendee type updated successfully" });
   } catch (error) {
     console.log("UPDATE ATTENDEE TYPE ERROR:", error);
@@ -115,6 +121,7 @@ exports.deleteAttendeeType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_ATTENDEE_TYPE', `Deleted Attendee Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendee type deleted successfully" });
   } catch (error) {
     console.log("DELETE ATTENDEE TYPE ERROR:", error);
@@ -203,6 +210,7 @@ exports.restoreAttendeeType = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_ATTENDEE_TYPE', `Restored Attendee Type: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendee type restored successfully" });
 
   } catch (error) {

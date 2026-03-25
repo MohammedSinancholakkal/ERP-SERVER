@@ -1,5 +1,6 @@
 const sql = require("../../db/dbConfig");
 const { formatISTTime, formatISTDate, formatISTDateTime } = require("../../utils/dateTime.js");
+const auditService = require("../../services/auditService");
 
 const istToUTC = (istDateString) => {
   if (!istDateString) return null;
@@ -361,6 +362,7 @@ GETUTCDATE(), ${userIdInt}, 1
         // Do not fail the request if email fails, just log it
     }
 
+    await auditService.logAction(userId, 'CREATE_MEETING', `Created Meeting: ${meetingName}`, req.ip);
     res.status(201).json({
       message: "Meeting and attendees added successfully",
       meetingId
@@ -417,6 +419,9 @@ const parsedEndDate   = istToUTC(endDate);
   const transaction = new sql.Transaction();
 
   try {
+    const oldRes = await sql.query`SELECT MeetingName FROM Meetings WHERE Id = ${meetingIdInt}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].MeetingName : "Unknown";
+
     await transaction.begin();
     const request = new sql.Request(transaction);
 
@@ -635,6 +640,7 @@ UpdateUserId = ${userIdInt}
         // Do not fail the request if email fails, just log it
     }
 
+    await auditService.logAction(userId, 'UPDATE_MEETING', `Updated Meeting: ${oldName} -> ${meetingName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting updated successfully" });
 
   } catch (error) {
@@ -663,6 +669,7 @@ exports.deleteMeeting = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_MEETING', `Deleted Meeting (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting deleted successfully" });
 
   } catch (error) {

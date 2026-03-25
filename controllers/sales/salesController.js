@@ -1,6 +1,7 @@
 const sql = require("../../db/dbConfig");
 const { generateVNo } = require("../../utils/vnoUtils");
 const accountingService = require("../../services/accountingService");
+const auditService = require("../../services/auditService");
 
 
 
@@ -607,6 +608,7 @@ exports.addSale = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_SALE', `Created Sale (VNo: ${vno || invoiceNo}, Net Total: ${netTotal})`, req.ip);
     res.status(200).json({ message: "Sale added successfully" });
 
   } catch (error) {
@@ -675,10 +677,11 @@ exports.updateSale = async (req, res) => {
 
     // FETCH EXISTING DATA
     try {
-        const currentRes = await new sql.Request(transaction).query`SELECT VNo, InvoiceNo FROM Sales WHERE Id = ${id}`;
-        if (currentRes.recordset.length > 0) {
-            oldVNo = currentRes.recordset[0].VNo;
-            dbInvoiceNo = currentRes.recordset[0].InvoiceNo;
+        const currentRes = await new sql.Request(transaction).query`SELECT * FROM Sales WHERE Id = ${id}`;
+        var currentSale = currentRes.recordset[0];
+        if (currentSale) {
+            oldVNo = currentSale.VNo;
+            dbInvoiceNo = currentSale.InvoiceNo;
         }
 
         // Logic to handle empty VNo
@@ -971,6 +974,10 @@ exports.updateSale = async (req, res) => {
     }
 
     await transaction.commit();
+    
+    const updatedSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
+    const updatedSale = updatedSaleResult.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_SALE', `Updated Sale (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip, currentSale, updatedSale);
     res.status(200).json({ message: "Sale updated successfully" });
 
   } catch (error) {
@@ -994,6 +1001,9 @@ exports.deleteSale = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const currentSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
+    const currentSale = currentSaleResult.recordset[0];
+
     await transaction.begin();
 
     // STOCK RESTORE (INCREASE)
@@ -1049,6 +1059,9 @@ exports.deleteSale = async (req, res) => {
     }
     
     await transaction.commit();
+    const deletedSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
+    const deletedSale = deletedSaleResult.recordset[0];
+    await auditService.logAction(userId, 'DELETE_SALE', `Deleted Sale (ID: ${id})`, req.ip, currentSale, deletedSale);
     res.status(200).json({ message: "Sale deleted successfully" });
 
   } catch (error) {
@@ -1110,6 +1123,9 @@ exports.restoreSale = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const currentSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
+    const currentSale = currentSaleResult.recordset[0];
+
     await transaction.begin();
     const itemsReq = new sql.Request(transaction);
     const itemsRes = await itemsReq.query`
@@ -1161,6 +1177,9 @@ exports.restoreSale = async (req, res) => {
     }
 
     await transaction.commit();
+    const restoredSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
+    const restoredSale = restoredSaleResult.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_SALE', `Restored Sale (ID: ${id})`, req.ip, currentSale, restoredSale);
     res.status(200).json({ message: "Sale restored successfully" });
 
   } catch (error) {

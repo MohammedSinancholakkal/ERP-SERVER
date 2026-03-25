@@ -1,5 +1,6 @@
 // controllers/inventoryController/stocksController.js
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // ================================
 // GET ALL STOCKS (ACTIVE + JOIN + PAGINATION)
@@ -117,6 +118,7 @@ exports.addStock = async (req, res) => {
       }
     }
 
+    await auditService.logAction(userId, 'CREATE_STOCK', `Created Stock Entry (Product ID: ${productId}, Qty: ${quantity}, Mode: ${mode})`, req.ip);
     res.status(201).json({ message: "Stock entry added" });
   } catch (error) {
     console.error("ADD STOCK ERROR:", error);
@@ -212,6 +214,7 @@ exports.updateStock = async (req, res) => {
       }
     }
 
+    await auditService.logAction(userId, 'UPDATE_STOCK', `Updated Stock Entry (ID: ${id}) - Status: ${status}, Mode: ${mode}, Qty: ${quantity}`, req.ip);
     res.status(200).json({ message: "Stock updated successfully" });
   } catch (error) {
     console.error("UPDATE STOCK ERROR:", error);
@@ -265,6 +268,7 @@ exports.deleteStock = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_STOCK', `Deleted Stock Entry (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Stock deleted successfully" });
   } catch (error) {
     console.error("DELETE STOCK ERROR:", error);
@@ -394,7 +398,7 @@ exports.restoreStock = async (req, res) => {
       WHERE Id = ${id}
     `;
 
-
+    await auditService.logAction(userId, 'RESTORE_STOCK', `Restored Stock Entry (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Stock restored successfully" });
   } catch (error) {
     console.error("RESTORE STOCK ERROR:", error);

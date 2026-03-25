@@ -1,4 +1,5 @@
 const sql = require("mssql");
+const auditService = require("../../services/auditService");
 
 exports.getAllCashAdjustments = async (req, res) => {
     try {
@@ -151,6 +152,7 @@ exports.addCashAdjustment = async (req, res) => {
             .query(insertQuery);
 
         await transaction.commit();
+        await auditService.logAction(userId, 'CREATE_CASH_ADJUSTMENT', `Created Cash Adjustment (VNo: ${vno}, Type: ${type}, Amount: ${amount})`, req.ip);
         res.status(201).json({ message: "Successfully created manual cash adjustment" });
     } catch (err) {
         console.error("Add Cash Adjustment Error", err);

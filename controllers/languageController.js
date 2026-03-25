@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL LANGUAGES (Paginated)
@@ -65,6 +66,7 @@ exports.addLanguage = async (req, res) => {
       VALUES (${languageId}, ${languageName}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_LANGUAGE', `Created Language: ${languageName}`, req.ip);
     res.status(200).json({ message: "Language added successfully" });
 
   } catch (error) {
@@ -81,6 +83,9 @@ exports.updateLanguage = async (req, res) => {
   const { languageId, languageName, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT LanguageName FROM Languages WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].LanguageName : "Unknown";
+
     await sql.query`
       UPDATE Languages
       SET 
@@ -91,6 +96,7 @@ exports.updateLanguage = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_LANGUAGE', `Updated Language: ${oldName} -> ${languageName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language updated successfully" });
 
   } catch (error) {
@@ -116,6 +122,7 @@ exports.deleteLanguage = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_LANGUAGE', `Deleted Language (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language deleted successfully" });
 
   } catch (error) {
@@ -211,6 +218,7 @@ exports.restoreLanguage = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_LANGUAGE', `Restored Language (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language restored successfully" });
 
   } catch (error) {

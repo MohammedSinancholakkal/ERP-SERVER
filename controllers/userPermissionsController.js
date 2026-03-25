@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 /**
  * GET permissions for a user
@@ -73,6 +74,7 @@ exports.setUserPermissions = async (req, res) => {
       `;
     }
 
+    await auditService.logAction(updateUserId || 1, 'UPDATE_USER_PERMISSIONS', `Updated permissions for User ${userId}`, req.ip);
     res.status(200).json({ message: "User permissions updated" });
   } catch (error) {
     console.error("SET USER PERMISSIONS ERROR:", error);

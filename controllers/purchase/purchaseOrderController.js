@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL PURCHASE ORDERS (Paginated)
@@ -229,10 +230,10 @@ exports.addPurchaseOrder = async (req, res) => {
           ${purchaseId}, ${userId}
         )
       `;
-
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_PURCHASE_ORDER', `Created Purchase Order (No: ${poNumber}, Net Total: ${safeNumbers.netTotal})`, req.ip);
     res.status(200).json({ message: "Purchase Order added successfully" });
 
   } catch (error) {
@@ -292,6 +293,9 @@ exports.updatePurchaseOrder = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const currentPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+    const currentPO = currentPOResult.recordset[0];
+
     await transaction.begin();
 
     const purchaseReq = new sql.Request(transaction);
@@ -350,6 +354,11 @@ exports.updatePurchaseOrder = async (req, res) => {
     }
 
     await transaction.commit();
+
+    const updatedPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+    const updatedPO = updatedPOResult.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_PURCHASE_ORDER', `Updated Purchase Order (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip, currentPO, updatedPO);
+
     res.status(200).json({ message: "Purchase Order updated successfully" });
 
   } catch (error) {
@@ -370,6 +379,9 @@ exports.deletePurchaseOrder = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+     const currentPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+     const currentPO = currentPOResult.recordset[0];
+
      await transaction.begin();
 
      // STOCK REVERSAL: NOT APPLICABLE FOR PO
@@ -389,6 +401,11 @@ exports.deletePurchaseOrder = async (req, res) => {
     `;
 
     await transaction.commit();
+
+    const deletedPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+    const deletedPO = deletedPOResult.recordset[0];
+    await auditService.logAction(userId, 'DELETE_PURCHASE_ORDER', `Deleted Purchase Order (ID: ${id})`, req.ip, currentPO, deletedPO);
+
     res.status(200).json({ message: "Purchase Order deleted successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback(); 
@@ -444,6 +461,9 @@ exports.restorePurchaseOrder = async (req, res) => {
   const transaction = new sql.Transaction();
 
   try {
+    const currentPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+    const currentPO = currentPOResult.recordset[0];
+
     await transaction.begin();
     
     // STOCK UPDATE: NOT APPLICABLE
@@ -463,6 +483,11 @@ exports.restorePurchaseOrder = async (req, res) => {
     `;
 
     await transaction.commit();
+
+    const restoredPOResult = await sql.query`SELECT * FROM PurchaseOrders WHERE Id = ${id}`;
+    const restoredPO = restoredPOResult.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_PURCHASE_ORDER', `Restored Purchase Order (ID: ${id})`, req.ip, currentPO, restoredPO);
+
     res.status(200).json({ message: "Purchase Order restored successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback();

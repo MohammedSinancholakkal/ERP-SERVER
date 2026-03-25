@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL UNITS (Paginated)
@@ -67,6 +68,7 @@ exports.addUnit = async (req, res) => {
 
     const newId = result.recordset[0].Id; 
 
+    await auditService.logAction(userId, 'CREATE_UNIT', `Created Unit: ${name}`, req.ip);
     res.status(200).json({ 
         message: "Unit added successfully", 
         record: { id: newId, name, description }
@@ -87,6 +89,9 @@ exports.updateUnit = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT Name FROM Units WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
+
     await sql.query`
       UPDATE Units 
       SET 
@@ -97,6 +102,7 @@ exports.updateUnit = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_UNIT', `Updated Unit: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit updated successfully" });
 
   } catch (error) {
@@ -123,6 +129,7 @@ exports.deleteUnit = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_UNIT', `Deleted Unit (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit deleted successfully" });
 
   } catch (error) {
@@ -206,6 +213,7 @@ exports.restoreUnit = async (req, res) => {
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
+    await auditService.logAction(userId, 'RESTORE_UNIT', `Restored Unit: ${Name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit restored successfully" });
   } catch (error) {
     console.error("RESTORE UNIT ERROR:", error);

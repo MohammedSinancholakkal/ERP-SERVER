@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL SERVICES
@@ -62,6 +63,7 @@ exports.addService = async (req, res) => {
       )
     `;
 
+    await auditService.logAction(userId, 'CREATE_SERVICE', `Created Service: ${ServiceName}`, req.ip);
     res.status(201).json({ message: "Service added successfully" });
   } catch (error) {
     console.log("ADD SERVICE ERROR:", error);
@@ -80,6 +82,9 @@ exports.updateService = async (req, res) => {
     return res.status(400).json({ message: "Required fields missing" });
 
   try {
+    const oldRes = await sql.query`SELECT ServiceName FROM Services WHERE id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].ServiceName : "Unknown";
+
     await sql.query`
       UPDATE Services
       SET 
@@ -92,6 +97,7 @@ exports.updateService = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_SERVICE', `Updated Service: ${oldName} -> ${ServiceName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service updated successfully" });
   } catch (error) {
     console.log("UPDATE SERVICE ERROR:", error);
@@ -116,6 +122,7 @@ exports.deleteService = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_SERVICE', `Deleted Service (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service deleted successfully" });
   } catch (error) {
     console.log("DELETE SERVICE ERROR:", error);
@@ -216,6 +223,7 @@ exports.restoreService = async (req, res) => {
       WHERE id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_SERVICE', `Restored Service (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service restored successfully" });
   } catch (error) {
     console.log("RESTORE SERVICE ERROR:", error);

@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 /**
  * GET permissions for a role
@@ -72,6 +73,7 @@ exports.setRolePermissions = async (req, res) => {
       `;
     }
 
+    await auditService.logAction(updateUserId || 1, 'UPDATE_ROLE_PERMISSIONS', `Updated permissions for Role ${id}`, req.ip);
     res.status(200).json({ message: "Role permissions updated" });
   } catch (error) {
     console.error("SET ROLE PERMISSIONS ERROR:", error);

@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const sendEmail = require("../utils/sendEmail");
 const path = require("path");
 const fs = require("fs");
+const auditService = require("../services/auditService");
 
 exports.Login = async (req, res) => {
   console.log("Inside SuperAdmin Login");
@@ -456,6 +457,7 @@ exports.addUser = async (req, res) => {
       (${username}, ${displayName}, ${email}, ${hashed}, ${salt}, ${imgPath}, ${source}, ${insertUserId})
     `;
 
+    await auditService.logAction(insertUserId, 'CREATE_USER', `Created new user: ${username}`, req.ip);
     res.status(201).json({ message: "User added successfully" });
   } catch (e) {
     console.error("ADD USER ERROR:", e); 
@@ -472,10 +474,9 @@ exports.updateUser = async (req, res) => {
   const { username, displayName, email, password, source, userId, userImage } = req.body;
 
   try {
-    const old = await sql.query`  
-      SELECT userImage FROM Users WHERE userId = ${id}
-    `;
-    const oldImg = old.recordset[0]?.userImage;     
+    const oldRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const oldUser = oldRes.recordset[0];
+    const oldImg = oldUser?.userImage;     
     let finalImage = oldImg;
 
     // new file uploaded
@@ -513,6 +514,10 @@ exports.updateUser = async (req, res) => {
 
     if (req.file && oldImg) deleteFile(oldImg);
 
+    const newUserRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const newUser = newUserRes.recordset[0];
+    await auditService.logAction(updateUserId, 'UPDATE_USER', `Updated user: ${oldUser?.username} -> ${username} (ID: ${id})`, req.ip);
+
     res.status(200).json({ message: "User updated successfully" });
   } catch (e) {
     console.error("UPDATE USER ERROR:", e);
@@ -528,10 +533,8 @@ exports.deleteUser = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const old = await sql.query`
-      SELECT userImage FROM Users WHERE userId = ${id}
-    `;
-    const oldImg = old.recordset[0]?.userImage;
+    const oldRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const oldUser = oldRes.recordset[0];
 
     await sql.query`
       UPDATE Users
@@ -541,6 +544,10 @@ exports.deleteUser = async (req, res) => {
     `;
 
     // if (oldImg) deleteFile(oldImg); // Logic removed: Soft delete should not delete files
+
+    const newUserRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const newUser = newUserRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_USER', `Deleted user (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "User deleted successfully" });
   } catch (e) {
@@ -600,6 +607,9 @@ exports.restoreUser = async (req, res) => {
      }
      // --- Duplicate Check End ---
 
+    const oldRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const oldUser = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Users
       SET 
@@ -607,6 +617,10 @@ exports.restoreUser = async (req, res) => {
         updateDate = GETDATE()
       WHERE userId = ${id}
     `;
+
+    const newUserRes = await sql.query`SELECT * FROM Users WHERE userId = ${id}`;
+    const newUser = newUserRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_USER', `Restored user (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "User restored successfully" });
   } catch (e) {

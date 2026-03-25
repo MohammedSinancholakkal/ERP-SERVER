@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL GOODS RECEIPTS (Paginated)
@@ -188,6 +189,7 @@ exports.addGoodsReceipt = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'CREATE_GOODS_RECEIPT', `Created Goods Receipt (Total Qty: ${totalQuantity})`, req.ip);
     res.status(200).json({ message: "Goods receipt added successfully" });
 
   } catch (error) {
@@ -276,6 +278,7 @@ exports.updateGoodsReceipt = async (req, res) => {
     }
 
     await transaction.commit();
+    await auditService.logAction(userId, 'UPDATE_GOODS_RECEIPT', `Updated Goods Receipt (ID: ${id}, Total Qty: ${totalQuantity})`, req.ip);
     res.status(200).json({ message: "Goods receipt updated successfully" });
 
   } catch (error) {
@@ -311,6 +314,7 @@ exports.deleteGoodsReceipt = async (req, res) => {
       WHERE GoodsReceiptId = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_GOODS_RECEIPT', `Deleted Goods Receipt (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Goods receipt deleted successfully" });
 
   } catch (error) {
@@ -382,6 +386,7 @@ exports.restoreGoodsReceipt = async (req, res) => {
       WHERE GoodsReceiptId = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_GOODS_RECEIPT', `Restored Goods Receipt (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Goods receipt restored successfully" });
 
   } catch (error) {

@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // ================================
 // GET ALL CUSTOMER GROUPS
@@ -79,6 +80,7 @@ exports.addCustomerGroup = async (req, res) => {
       VALUES (${groupName.trim()}, ${description}, ${userId})
     `;
 
+    await auditService.logAction(userId, 'CREATE_CUSTOMER_GROUP', `Created Customer Group: ${groupName.trim()}`, req.ip);
     res.status(201).json({ message: "Customer Group added successfully" });
   } catch (error) {
     console.log("ADD CUSTOMER GROUP ERROR:", error);
@@ -107,6 +109,9 @@ exports.updateCustomerGroup = async (req, res) => {
       return res.status(409).json({ message: "Customer group with this name already exists" });
     }
 
+    const oldRes = await sql.query`SELECT GroupName FROM CustomerGroups WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].GroupName : "Unknown";
+
     await sql.query`
       UPDATE CustomerGroups
       SET 
@@ -117,6 +122,7 @@ exports.updateCustomerGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_CUSTOMER_GROUP', `Updated Customer Group: ${oldName} -> ${groupName.trim()} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group updated successfully" });
   } catch (error) {
     console.log("UPDATE CUSTOMER GROUP ERROR:", error);
@@ -141,6 +147,7 @@ exports.deleteCustomerGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_CUSTOMER_GROUP', `Deleted Customer Group (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group deleted successfully" });
   } catch (error) {
     console.log("DELETE CUSTOMER GROUP ERROR:", error);
@@ -233,6 +240,7 @@ exports.restoreCustomerGroup = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_CUSTOMER_GROUP', `Restored Customer Group: ${GroupName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group restored successfully" });
 
   } catch (error) {

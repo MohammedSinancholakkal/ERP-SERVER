@@ -1,4 +1,5 @@
 const sql = require("../../db/dbConfig");
+const auditService = require("../../services/auditService");
 
 // =============================================================
 // GET ALL DEPARTMENTS (Paginated)
@@ -79,6 +80,7 @@ exports.addDepartment = async (req, res) => {
     `;
 
     const newId = result.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_DEPARTMENT', `Created Department: ${department} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "Department added successfully",
         record: { id: newId, name: department }
@@ -97,6 +99,9 @@ exports.updateDepartment = async (req, res) => {
   const { department, description, parentDepartmentId, userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT Department FROM Departments WHERE Id = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Department : "Unknown";
+
     await sql.query`
       UPDATE Departments
       SET
@@ -108,6 +113,7 @@ exports.updateDepartment = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'UPDATE_DEPARTMENT', `Updated Department: ${oldName} -> ${department} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department updated successfully" });
   } catch (error) {
     console.error("UPDATE DEPARTMENT ERROR:", error);
@@ -132,6 +138,7 @@ exports.deleteDepartment = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'DELETE_DEPARTMENT', `Deleted Department (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department deleted successfully" });
   } catch (error) {
     console.error("DELETE DEPARTMENT ERROR:", error);
@@ -232,6 +239,7 @@ exports.restoreDepartment = async (req, res) => {
       WHERE Id = ${id}
     `;
 
+    await auditService.logAction(userId, 'RESTORE_DEPARTMENT', `Restored Department (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department restored successfully" });
   } catch (error) {
     console.error("RESTORE DEPARTMENT ERROR:", error);

@@ -1,4 +1,5 @@
 const sql = require("../db/dbConfig");
+const auditService = require("../services/auditService");
 
 // =============================================================
 // GET ALL ROLES (Paginated List)
@@ -73,6 +74,7 @@ exports.addRole = async (req, res) => {
       VALUES (${name?.toLowerCase()}, ${userId}, 1, GETDATE())
     `;
 
+    await auditService.logAction(userId, 'CREATE_ROLE', `Created Role: ${name}`, req.ip);
     res.status(200).json({ message: "Role added successfully" });
 
   } catch (error) {
@@ -104,6 +106,9 @@ exports.updateRole = async (req, res) => {
       return res.status(409).json({ message: "Role with this name already exists" });
     }
 
+    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const oldRole = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Roles 
       SET 
@@ -112,6 +117,10 @@ exports.updateRole = async (req, res) => {
         UpdateDate = GETDATE()
       WHERE RoleId = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const newRole = newRes.recordset[0];
+    await auditService.logAction(userId, 'UPDATE_ROLE', `Updated Role: ${oldRole?.RoleName} -> ${name} (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Role updated successfully" });
 
@@ -130,6 +139,9 @@ exports.deleteRole = async (req, res) => {
   const { userId } = req.body;
 
   try {
+    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const oldRole = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Roles 
       SET 
@@ -138,6 +150,10 @@ exports.deleteRole = async (req, res) => {
         DeleteDate = GETDATE()
       WHERE RoleId = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const newRole = newRes.recordset[0];
+    await auditService.logAction(userId, 'DELETE_ROLE', `Deleted Role (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Role deleted successfully" });
 
@@ -225,6 +241,9 @@ exports.restoreRole = async (req, res) => {
     }
     // --- Duplicate Check End ---
 
+    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const oldRole = oldRes.recordset[0];
+
     await sql.query`
       UPDATE Roles
       SET 
@@ -235,6 +254,10 @@ exports.restoreRole = async (req, res) => {
         DeleteUserId = NULL
       WHERE RoleId = ${id}
     `;
+
+    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
+    const newRole = newRes.recordset[0];
+    await auditService.logAction(userId, 'RESTORE_ROLE', `Restored Role (ID: ${id})`, req.ip);
 
     res.status(200).json({ message: "Role restored successfully" });
 
