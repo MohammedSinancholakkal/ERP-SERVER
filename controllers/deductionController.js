@@ -56,71 +56,84 @@ exports.getAllDeductions = async (req, res) => {
 // ADD NEW DEDUCTION
 // ================================
 exports.addDeduction = async (req, res) => {
-  const { name, description, userId } = req.body;
+  const { name, userId } = req.body;
 
-  if (!name || !name.trim())
+  if (!name)
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO Deductions (Name, Description, InsertUserId)
-      VALUES (${name.trim()}, ${description || null}, ${userId})
+      INSERT INTO Deductions (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_DEDUCTION', `Created Deduction: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_DEDUCTION', `Created Deduction: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Deduction added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Deduction already exists" });
+    }
     console.log("ADD DEDUCTION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
-  
+
 // ================================
 // UPDATE DEDUCTION
 // ================================
 exports.updateDeduction = async (req, res) => {
   const { id } = req.params;
-  const { name, description, userId } = req.body;
+  const { name, userId } = req.body;
 
-  if (!name || !name.trim())
+  if (!name)
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM Deductions WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE Deductions
-      SET Name = ${name.trim()},
-          Description = ${description || null},
-          UpdateUserId = ${userId},
-          UpdateDate = GETDATE()
+      SET 
+        Name = ${trimmedName},
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_DEDUCTION', `Updated Deduction: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_DEDUCTION', `Updated Deduction: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Deduction updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Deduction name already exists" });
+    }
     console.log("UPDATE DEDUCTION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
-}; 
- 
+};
+
 // ================================
-// DELETE (SOFT)
+// DELETE DEDUCTION (SOFT DELETE)
 // ================================
 exports.deleteDeduction = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Deductions
-      SET IsActive = 0,
-          DeleteUserId = ${userId},
-          DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      SET 
+        IsActive = 0,
+        DeleteUserId = ${userId},
+        DeleteDate = GETDATE()
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Deduction already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_DEDUCTION', `Deleted Deduction (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Deduction deleted successfully" });
@@ -181,27 +194,28 @@ exports.restoreDeduction = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM Deductions WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM Deductions WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active deduction with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Deductions
-      SET IsActive = 1,
-          DeleteUserId = NULL,
-          DeleteDate = NULL,
-          UpdateUserId = ${userId},
-          UpdateDate = GETDATE()
-      WHERE Id = ${id}
+      SET 
+        IsActive = 1,
+        UpdateUserId = ${userId},
+        UpdateDate = GETDATE(),
+        DeleteUserId = NULL,
+        DeleteDate = NULL
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_DEDUCTION', `Restored Deduction: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Deduction already restored or not found" });
+    }
+
     res.status(200).json({ message: "Deduction restored successfully" });
-  } catch (err) {
-    console.log("RESTORE DEDUCTION ERROR:", err);
-    res.status(500).json({ message: "Server error" });
+
+  } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active deduction with this name already exists." });
+    }
+    console.log("RESTORE DEDUCTION ERROR:", error);
+    res.status(500).json({ message: "Server Error" });
   }
 };

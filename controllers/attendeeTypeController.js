@@ -62,14 +62,18 @@ exports.addAttendeeType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO AttendeeTypes (Name, InsertUserId)
-      VALUES (${name.trim()}, ${userId})
+      INSERT INTO AttendeeTypes (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_ATTENDEE_TYPE', `Created Attendee Type: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_ATTENDEE_TYPE', `Created Attendee Type: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Attendee type added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Attendee type already exists" });
+    }
     console.log("ADD ATTENDEE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -86,20 +90,24 @@ exports.updateAttendeeType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM AttendeeTypes WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE AttendeeTypes
-      SET Name = ${name.trim()},
+      SET Name = ${trimmedName},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_ATTENDEE_TYPE', `Updated Attendee Type: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_ATTENDEE_TYPE', `Updated Attendee Type: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendee type updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Attendee type name already exists" });
+    }
     console.log("UPDATE ATTENDEE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -113,13 +121,17 @@ exports.deleteAttendeeType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE AttendeeTypes
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Attendee type already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_ATTENDEE_TYPE', `Deleted Attendee Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendee type deleted successfully" });
@@ -192,14 +204,7 @@ exports.restoreAttendeeType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM AttendeeTypes WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM AttendeeTypes WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE AttendeeTypes
       SET 
         IsActive = 1,
@@ -207,13 +212,19 @@ exports.restoreAttendeeType = async (req, res) => {
         DeleteDate = NULL,
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_ATTENDEE_TYPE', `Restored Attendee Type: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Attendee type already restored or not found" });
+    }
+
     res.status(200).json({ message: "Attendee type restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
+    }
     console.log("RESTORE ATTENDEE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

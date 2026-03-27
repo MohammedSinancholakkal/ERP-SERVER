@@ -126,9 +126,7 @@ exports.getSupplierById = async (req, res) => {
 
 
 
-// =============================================================
-// ADD SUPPLIER
-// =============================================================
+
 const accountingService = require("../../services/accountingService");
 
 // =============================================================
@@ -182,8 +180,7 @@ exports.addSupplier = async (req, res) => {
         userId: userId
     });
 
-
-    const result = await sql.query`
+    const idResult_newId = await sql.query`
       INSERT INTO Suppliers (
         CompanyName, CountryId, StateId, CityId,
         ContactName, ContactTitle, AddressLine1, AddressLine2, RegionId,
@@ -193,19 +190,18 @@ exports.addSupplier = async (req, res) => {
         OrderBooker, PAN, GSTIN, InsertUserId,
         COAId
       )
-      OUTPUT INSERTED.Id
       VALUES (
-        ${companyName}, ${countryId}, ${stateId}, ${cityId},
+        ${companyName.trim()}, ${countryId}, ${stateId}, ${cityId},
         ${contactName}, ${contactTitle}, ${addressLine1}, ${addressLine2}, ${regionId},
         ${postalCode}, ${phone}, ${fax}, ${website},
         ${email}, ${emailAddress}, ${previousCreditBalance},
         ${supplierGroupId},
         ${orderBooker}, ${pan || null}, ${gstin || null}, ${userId},
         ${coaId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
+    const newId = idResult_newId.recordset[0].Id;
 
     await auditService.logAction(userId, 'CREATE_SUPPLIER', `Created Supplier: ${companyName}`, req.ip);
     res.status(200).json({ 
@@ -213,6 +209,15 @@ exports.addSupplier = async (req, res) => {
         record: { id: newId, companyName, email, phone }
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        const check = await sql.query`SELECT Id FROM Suppliers WHERE CompanyName = ${companyName.trim()} AND IsActive = 1`;
+        if (check.recordset.length > 0) {
+            return res.status(200).json({ 
+                message: "Supplier already exists",
+                record: { id: check.recordset[0].Id, companyName, email, phone }
+            });
+        }
+    }
     console.error("ADD SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -250,13 +255,14 @@ exports.updateSupplier = async (req, res) => {
   } = req.body;
 
   try {
-    const oldRes = await sql.query`SELECT CompanyName FROM Suppliers WHERE Id = ${id}`;
-    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CompanyName : "Unknown";
+    // Fetch old name for audit
+    const oldResult = await sql.query`SELECT CompanyName FROM Suppliers WHERE Id = ${id}`;
+    const oldName = oldResult.recordset.length > 0 ? oldResult.recordset[0].CompanyName : "Unknown";
 
     await sql.query`
       UPDATE Suppliers
       SET
-        CompanyName = ${companyName},
+        CompanyName = ${companyName.trim()},
         CountryId = ${countryId},
         StateId = ${stateId},
         CityId = ${cityId},
@@ -284,6 +290,9 @@ exports.updateSupplier = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_SUPPLIER', `Updated Supplier: ${oldName} -> ${companyName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Supplier with this name already exists" });
+    }
     console.error("UPDATE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -299,14 +308,18 @@ exports.deleteSupplier = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Suppliers
       SET
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Supplier already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_SUPPLIER', `Deleted Supplier (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier deleted successfully" });
@@ -467,7 +480,7 @@ exports.restoreSupplier = async (req, res) => {
 
     if (duplicateField) return res.status(409).json({ message: `Cannot restore. An active supplier with this ${duplicateField} already exists.` });
 
-    await sql.query`
+    const result = await sql.query`
       UPDATE Suppliers
       SET
         IsActive = 1,
@@ -476,9 +489,14 @@ exports.restoreSupplier = async (req, res) => {
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'RESTORE_SUPPLIER', `Restored Supplier: ${CompanyName} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] > 0) {
+        await auditService.logAction(userId, 'RESTORE_SUPPLIER', `Restored Supplier: ${CompanyName} (ID: ${id})`, req.ip);
+    }
     res.status(200).json({ message: "Supplier restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active supplier with this name already exists." });
+    }
     console.error("RESTORE SUPPLIER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

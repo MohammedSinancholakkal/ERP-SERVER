@@ -59,14 +59,18 @@ exports.addIncome = async (req, res) => {
     return res.status(400).json({ message: "Income name is required" });
 
   try {
+    const name = incomeName.trim();
     await sql.query`
-      INSERT INTO Incomes (IncomeName, Description, InsertUserId)
-      VALUES (${incomeName}, ${description}, ${userId})
+      INSERT INTO Incomes (IncomeName, Description, InsertUserId, IsActive)
+      VALUES (${name}, ${description}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_INCOME', `Created Income: ${incomeName}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_INCOME', `Created Income: ${name}`, req.ip);
     res.status(201).json({ message: "Income added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Income already exists" });
+    }
     console.log("ADD INCOME ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -83,22 +87,26 @@ exports.updateIncome = async (req, res) => {
     return res.status(400).json({ message: "Income name is required" });
 
   try {
+    const name = incomeName.trim();
     const oldRes = await sql.query`SELECT IncomeName FROM Incomes WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].IncomeName : "Unknown";
 
     await sql.query`
       UPDATE Incomes
       SET 
-        IncomeName = ${incomeName},
+        IncomeName = ${name},
         Description = ${description},
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_INCOME', `Updated Income: ${oldName} -> ${incomeName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_INCOME', `Updated Income: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Income with this name already exists" });
+    }
     console.log("UPDATE INCOME ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -112,14 +120,18 @@ exports.deleteIncome = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Incomes
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Income already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_INCOME', `Deleted Income (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income deleted successfully" });
@@ -228,14 +240,7 @@ exports.restoreIncome = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT IncomeName FROM Incomes WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { IncomeName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM Incomes WHERE LOWER(IncomeName) = LOWER(${IncomeName.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active income with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Incomes
       SET 
         IsActive = 1,
@@ -243,13 +248,23 @@ exports.restoreIncome = async (req, res) => {
         DeleteDate = NULL,
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Income already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT IncomeName FROM Incomes WHERE Id = ${id}`;
+    const IncomeName = item.recordset.length > 0 ? item.recordset[0].IncomeName : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_INCOME', `Restored Income: ${IncomeName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Income restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active income with this name already exists." });
+    }
     console.log("RESTORE INCOME ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

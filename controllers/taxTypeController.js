@@ -57,13 +57,17 @@ exports.addTaxType = async (req, res) => {
   const { name, isInterState, userId } = req.body;    
         
   try {
+    const taxName = name?.trim();
     await sql.query`
-      INSERT INTO TaxTypes (name, isInterState, percentage, insertUserId)
-      VALUES (${name}, ${isInterState}, ${req.body.percentage || 0}, ${userId})
+      INSERT INTO TaxTypes (name, isInterState, percentage, insertUserId, isActive)
+      VALUES (${taxName}, ${isInterState}, ${req.body.percentage || 0}, ${userId}, 1)
     `;
-    await auditService.logAction(userId, 'CREATE_TAXTYPE', `Created Tax Type: ${name}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_TAXTYPE', `Created Tax Type: ${taxName}`, req.ip);
     res.status(200).json({ message: "Tax Type added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Tax Type already exists" });
+    }
     console.error("ADD TAX TYPE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -77,22 +81,26 @@ exports.updateTaxType = async (req, res) => {
   const { name, isInterState, userId } = req.body;
 
   try {
+    const taxName = name?.trim();
     const oldRes = await sql.query`SELECT name FROM TaxTypes WHERE id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
 
     await sql.query`
       UPDATE TaxTypes 
       SET 
-        name = ${name},
+        name = ${taxName},
         isInterState = ${isInterState},
         percentage = ${req.body.percentage || 0},
         updateDate = GETDATE(),
         updateUserId = ${userId}
       WHERE id = ${id}
     `;
-    await auditService.logAction(userId, 'UPDATE_TAXTYPE', `Updated Tax Type: ${oldName} -> ${name} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_TAXTYPE', `Updated Tax Type: ${oldName} -> ${taxName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Tax Type name already exists" });
+    }
     console.error("UPDATE TAX TYPE ERROR:", error);
     res.status(500).json({ message: "Server error" });  
   }
@@ -106,14 +114,18 @@ exports.deleteTaxType = async (req, res) => {
   const { userId } = req.body;
   
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE TaxTypes 
       SET 
         isActive = 0,
         deleteDate = GETDATE(),
         deleteUserId = ${userId}
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Tax Type already deleted" });
+    }
     await auditService.logAction(userId, 'DELETE_TAXTYPE', `Deleted Tax Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type deleted successfully" });
   } catch (error) {
@@ -186,26 +198,29 @@ exports.restoreTaxType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT name FROM TaxTypes WHERE id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT id FROM TaxTypes WHERE LOWER(name) = LOWER(${name.trim()}) AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active tax type with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE TaxTypes
       SET 
         isActive = 1,
         updateDate = GETDATE(),
         updateUserId = ${userId}
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Tax Type already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT name FROM TaxTypes WHERE id = ${id}`;
+    const name = item.recordset.length > 0 ? item.recordset[0].name : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_TAXTYPE', `Restored Tax Type: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Type restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. Tax Type name already exists." });
+    }
     console.error("RESTORE TAX TYPE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

@@ -63,14 +63,18 @@ exports.addSupplierGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
+    const name = groupName.trim();
     await sql.query`
-      INSERT INTO SupplierGroups (GroupName, Description, InsertUserId)
-      VALUES (${groupName.trim()}, ${description}, ${userId})
+      INSERT INTO SupplierGroups (GroupName, Description, InsertUserId, IsActive)
+      VALUES (${name}, ${description}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_SUPPLIER_GROUP', `Created Supplier Group: ${groupName.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_SUPPLIER_GROUP', `Created Supplier Group: ${name}`, req.ip);
     res.status(201).json({ message: "Supplier group added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Supplier group already exists" });
+    }
     console.log("ADD SUPPLIER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -87,22 +91,26 @@ exports.updateSupplierGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
+    const name = groupName.trim();
     const oldRes = await sql.query`SELECT GroupName FROM SupplierGroups WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].GroupName : "Unknown";
 
     await sql.query`
       UPDATE SupplierGroups
       SET 
-        GroupName = ${groupName.trim()},
+        GroupName = ${name},
         Description = ${description},
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_SUPPLIER_GROUP', `Updated Supplier Group: ${oldName} -> ${groupName.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_SUPPLIER_GROUP', `Updated Supplier Group: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Supplier group with this name already exists" });
+    }
     console.log("UPDATE SUPPLIER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -116,14 +124,18 @@ exports.deleteSupplierGroup = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE SupplierGroups
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Supplier group already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_SUPPLIER_GROUP', `Deleted Supplier Group (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group deleted successfully" });
@@ -208,26 +220,29 @@ exports.restoreSupplierGroup = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT GroupName FROM SupplierGroups WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { GroupName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM SupplierGroups WHERE LOWER(GroupName) = LOWER(${GroupName.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active group with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE SupplierGroups
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Supplier group already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT GroupName FROM SupplierGroups WHERE Id = ${id}`;
+    const GroupName = item.recordset.length > 0 ? item.recordset[0].GroupName : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_SUPPLIER_GROUP', `Restored Supplier Group: ${GroupName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Supplier group restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active group with this name already exists." });
+    }
     console.log("RESTORE SUPPLIER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

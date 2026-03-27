@@ -53,28 +53,27 @@ exports.getAllUnits = async (req, res) => {
 };
 
 
-// =============================================================
-// ADD UNIT
-// =============================================================
 exports.addUnit = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
-    const result = await sql.query`
-      INSERT INTO Units (Name, Description, InsertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${name}, ${description}, ${userId})
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO Units (Name, Description, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${description}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const newId = idResult_newId.recordset[0].Id; 
 
-    const newId = result.recordset[0].Id; 
-
-    await auditService.logAction(userId, 'CREATE_UNIT', `Created Unit: ${name}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_UNIT', `Created Unit: ${trimmedName}`, req.ip);
     res.status(200).json({ 
         message: "Unit added successfully", 
-        record: { id: newId, name, description }
+        record: { id: newId, name: trimmedName, description }
     });
-
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Unit already exists" });
+    }
     console.error("ADD UNIT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -89,23 +88,27 @@ exports.updateUnit = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM Units WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE Units 
       SET 
-        Name = ${name},
+        Name = ${trimmedName},
         Description = ${description},
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_UNIT', `Updated Unit: ${oldName} -> ${name} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_UNIT', `Updated Unit: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Unit with this name already exists" });
+    }
     console.error("UPDATE UNIT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -120,18 +123,21 @@ exports.deleteUnit = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Units 
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Unit already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_UNIT', `Deleted Unit (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit deleted successfully" });
-
   } catch (error) {
     console.error("DELETE UNIT ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -199,23 +205,25 @@ exports.restoreUnit = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM Units WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkName = await sql.query`SELECT Id FROM Units WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkName.recordset.length > 0) {
-        return res.status(409).json({ message: "Cannot restore. An active unit with this name already exists." });
-    }
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Units
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
-    await auditService.logAction(userId, 'RESTORE_UNIT', `Restored Unit: ${Name} (ID: ${id})`, req.ip);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Unit already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT Name FROM Units WHERE Id = ${id}`;
+    const name = item.recordset.length > 0 ? item.recordset[0].Name : "Unknown";
+
+    await auditService.logAction(userId, 'RESTORE_UNIT', `Restored Unit: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Unit restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active unit with this name already exists." });
+    }
     console.error("RESTORE UNIT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

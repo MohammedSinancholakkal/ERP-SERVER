@@ -63,14 +63,18 @@ exports.addExpenseType = async (req, res) => {
     return res.status(400).json({ message: "Type name is required" });
 
   try {
+    const trimmedName = typeName.trim();
     await sql.query`
-      INSERT INTO ExpenseTypes (typeName, insertUserId)
-      VALUES (${typeName}, ${userId})
+      INSERT INTO ExpenseTypes (typeName, insertUserId, isActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_EXPENSETYPE', `Created Expense Type: ${typeName}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_EXPENSETYPE', `Created Expense Type: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Expense type added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Expense type already exists" });
+    }
     console.log("ADD EXPENSE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -87,21 +91,25 @@ exports.updateExpenseType = async (req, res) => {
     return res.status(400).json({ message: "Type name is required" });
 
   try {
+    const trimmedName = typeName.trim();
     const oldRes = await sql.query`SELECT typeName FROM ExpenseTypes WHERE typeId = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].typeName : "Unknown";
 
     await sql.query`
       UPDATE ExpenseTypes
       SET 
-        typeName = ${typeName},
+        typeName = ${trimmedName},
         updateUserId = ${userId},
         updateDate = GETDATE()
       WHERE typeId = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_EXPENSETYPE', `Updated Expense Type: ${oldName} -> ${typeName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_EXPENSETYPE', `Updated Expense Type: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Expense type updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Expense type name already exists" });
+    }
     console.log("UPDATE EXPENSE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -115,14 +123,18 @@ exports.deleteExpenseType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE ExpenseTypes
       SET 
         isActive = 0,
         deleteUserId = ${userId},
         deleteDate = GETDATE()
-      WHERE typeId = ${id}
+      WHERE typeId = ${id} AND isActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Expense type already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_EXPENSETYPE', `Deleted Expense Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Expense type deleted successfully" });
@@ -226,14 +238,7 @@ exports.restoreExpenseType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT typeName FROM ExpenseTypes WHERE typeId = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { typeName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT typeId FROM ExpenseTypes WHERE LOWER(typeName) = LOWER(${typeName.trim()}) AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active expense type with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE ExpenseTypes
       SET 
         isActive = 1,
@@ -241,12 +246,18 @@ exports.restoreExpenseType = async (req, res) => {
         deleteUserId = NULL,
         updateUserId = ${userId},
         updateDate = GETDATE()
-      WHERE typeId = ${id}
+      WHERE typeId = ${id} AND isActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_EXPENSETYPE', `Restored Expense Type: ${typeName} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Expense type already restored or not found" });
+    }
+
     res.status(200).json({ message: "Expense type restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active expense type with this name already exists." });
+    }
     console.log("RESTORE EXPENSE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

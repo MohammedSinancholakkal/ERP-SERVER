@@ -200,9 +200,6 @@ exports.restoreHead = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
   try {
-    const beforeRes = await sql.query`SELECT * FROM Accounts WHERE Id = ${id}`;
-    const beforeHead = beforeRes.recordset[0];
-
     await sql.query`
       UPDATE Accounts
       SET IsActive = 1,
@@ -211,11 +208,12 @@ exports.restoreHead = async (req, res) => {
       WHERE Id = ${id}
     `;
     
-    const afterRes = await sql.query`SELECT * FROM Accounts WHERE Id = ${id}`;
-    const afterHead = afterRes.recordset[0];
-    await auditService.logAction(userId, 'RESTORE_ACCOUNT_HEAD', `Restored Account Head: ${afterHead.HeadName} (Id: ${id})`, req.ip, beforeHead, afterHead);
+    await auditService.logAction(userId, 'RESTORE_ACCOUNT_HEAD', `Restored Account Head (Id: ${id})`, req.ip);
     res.status(200).json({ message: "Head restored" });
   } catch (err) {
+    if (err.number === 2627 || err.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. HeadCode already exists." });
+    }
     console.error("RESTORE COA ERROR:", err);
     res.status(500).json({ message: "Restore failed" });
   }
@@ -279,21 +277,19 @@ exports.addHead = async (req, res) => {
         newHeadCode = await generateHeadCode(pool, finalParentHead, finalHeadLevel - 1);
     }
     
-    // 3. Check Duplicate (Active vs Inactive)
-    const dupCheck = await pool.request()
-        .input('code', sql.VarChar, newHeadCode)
-        .query('SELECT Id, IsActive FROM Accounts WHERE HeadCode = @code');
-        
-    if (dupCheck.recordset.length > 0) {
-        const existing = dupCheck.recordset[0];
-        
-        // If Active: Error
-        if (existing.IsActive) {
-            return res.status(400).json({ message: "HeadCode already exists. Please try again." });
-        }
-        
-        // If Inactive: RESTORE
+    // 3. Attempt Insert/Update via Atomic Query
+    // We try to insert. If it fails due to unique constraint on HeadCode, we check if it's inactive to restore.
+    
+    const insertQ = `
+        INSERT INTO Accounts 
+        (HeadCode, HeadName, ParentHead, PHeadName, HeadLevel, HeadType, IsTransaction, IsGL, IsBudget, IsDepreciation, IsActive, InsertUserId, InsertDate)
+        VALUES 
+        (@code, @name, @parent, @pName, @level, @type, @isTr, @isGL, 0, 0, 1, @uid, GETDATE())
+    `;
+
+    try {
         await pool.request()
+            .input('code', sql.VarChar, newHeadCode)
             .input('name', sql.VarChar, headName)
             .input('parent', sql.VarChar, finalParentHead)
             .input('pName', sql.VarChar, finalParentName)
@@ -302,48 +298,56 @@ exports.addHead = async (req, res) => {
             .input('isTr', sql.Bit, isTransaction ? 1 : 0)
             .input('isGL', sql.Bit, isGL ? 1 : 0)
             .input('uid', sql.Int, userId)
-            .input('id', sql.Int, existing.Id)
-            .query(`
-                UPDATE Accounts
-                SET 
-                    HeadName = @name,
-                    ParentHead = @parent,
-                    PHeadName = @pName,
-                    HeadLevel = @level,
-                    HeadType = @type,
-                    IsTransaction = @isTr,
-                    IsGL = @isGL,
-                    IsActive = 1,
-                    UpdateDate = GETDATE(),
-                    UpdateUserId = @uid
-                WHERE Id = @id
-            `);
+            .query(insertQ);
+
+        await auditService.logAction(userId, 'CREATE_ACCOUNT_HEAD', `Created Account Head: ${headName} (Code: ${newHeadCode})`, req.ip);
+        res.status(201).json({ message: "Head added successfully", headCode: newHeadCode });
+
+    } catch (innerError) {
+        if (innerError.number === 2627 || innerError.number === 2601) {
+            // Handle duplicate - check if inactive to restore
+            const existingRes = await pool.request()
+                .input('code', sql.VarChar, newHeadCode)
+                .query('SELECT Id, IsActive FROM Accounts WHERE HeadCode = @code');
             
-        const afterRes = await pool.request().input('id', sql.Int, existing.Id).query('SELECT * FROM Accounts WHERE Id = @id');
-        await auditService.logAction(userId, 'RESTORE_ACCOUNT_HEAD', `Restored Account Head: ${headName} (Id: ${existing.Id})`, req.ip, existing, afterRes.recordset[0]);
-        return res.status(200).json({ message: "Head restored successfully", headCode: newHeadCode });
+            if (existingRes.recordset.length > 0) {
+                const existing = existingRes.recordset[0];
+                if (!existing.IsActive) {
+                    await pool.request()
+                        .input('name', sql.VarChar, headName)
+                        .input('parent', sql.VarChar, finalParentHead)
+                        .input('pName', sql.VarChar, finalParentName)
+                        .input('level', sql.Int, finalHeadLevel)
+                        .input('type', sql.VarChar, headType) 
+                        .input('isTr', sql.Bit, isTransaction ? 1 : 0)
+                        .input('isGL', sql.Bit, isGL ? 1 : 0)
+                        .input('uid', sql.Int, userId)
+                        .input('id', sql.Int, existing.Id)
+                        .query(`
+                            UPDATE Accounts
+                            SET 
+                                HeadName = @name,
+                                ParentHead = @parent,
+                                PHeadName = @pName,
+                                HeadLevel = @level,
+                                HeadType = @type,
+                                IsTransaction = @isTr,
+                                IsGL = @isGL,
+                                IsActive = 1,
+                                UpdateDate = GETDATE(),
+                                UpdateUserId = @uid
+                            WHERE Id = @id
+                        `);
+                    
+                    await auditService.logAction(userId, 'RESTORE_ACCOUNT_HEAD', `Restored Account Head: ${headName} (Id: ${existing.Id})`, req.ip);
+                    return res.status(200).json({ message: "Head restored successfully", headCode: newHeadCode });
+                } else {
+                    return res.status(400).json({ message: "HeadCode already exists. Please try again." });
+                }
+            }
+        }
+        throw innerError;
     }
-
-    // 4. Insert New if No Match Found
-    await pool.request()
-        .input('code', sql.VarChar, newHeadCode)
-        .input('name', sql.VarChar, headName)
-        .input('parent', sql.VarChar, finalParentHead)
-        .input('pName', sql.VarChar, finalParentName)
-        .input('level', sql.Int, finalHeadLevel)
-        .input('type', sql.VarChar, headType) 
-        .input('isTr', sql.Bit, isTransaction ? 1 : 0)
-        .input('isGL', sql.Bit, isGL ? 1 : 0)
-        .input('uid', sql.Int, userId)
-        .query(`
-          INSERT INTO Accounts 
-          (HeadCode, HeadName, ParentHead, PHeadName, HeadLevel, HeadType, IsTransaction, IsGL, IsBudget, IsDepreciation, IsActive, InsertUserId, InsertDate)
-          VALUES 
-          (@code, @name, @parent, @pName, @level, @type, @isTr, @isGL, 0, 0, 1, @uid, GETDATE())
-        `);
-
-    await auditService.logAction(userId, 'CREATE_ACCOUNT_HEAD', `Created Account Head: ${headName} (Code: ${newHeadCode})`, req.ip);
-    res.status(201).json({ message: "Head added successfully", headCode: newHeadCode });
   } catch (error) {
     console.error("ADD COA ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -362,18 +366,6 @@ exports.updateHead = async (req, res) => {
     
     const beforeRes = await pool.request().input('pid', sql.Int, id).query('SELECT * FROM Accounts WHERE Id = @pid');
     const beforeHead = beforeRes.recordset[0];
-
-    // Check for duplicate code if code is changing
-    if (headCode) {
-        const dupCheck = await pool.request()
-            .input('code', sql.VarChar, headCode)
-            .input('id', sql.Int, id)
-            .query('SELECT Id FROM Accounts WHERE HeadCode = @code AND Id != @id');
-            
-        if (dupCheck.recordset.length > 0) {
-            return res.status(400).json({ message: "HeadCode already taken" });
-        }
-    }
 
     await pool.request()
       .input('name', sql.VarChar, headName)
@@ -398,12 +390,12 @@ exports.updateHead = async (req, res) => {
         WHERE Id = @pid
       `);
 
-    const afterRes = await pool.request().input('pid', sql.Int, id).query('SELECT * FROM Accounts WHERE Id = @pid');
-    const afterHead = afterRes.recordset[0];
-    await auditService.logAction(userId, 'UPDATE_ACCOUNT_HEAD', `Updated Account Head (Id: ${id})`, req.ip, beforeHead, afterHead);
-
+    await auditService.logAction(userId, 'UPDATE_ACCOUNT_HEAD', `Updated Account Head (Id: ${id})`, req.ip);
     res.status(200).json({ message: "Head updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "HeadCode already taken" });
+    }
     console.error("UPDATE COA ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -429,22 +421,20 @@ exports.deleteHead = async (req, res) => {
         return res.status(400).json({ message: "Cannot delete head with active sub-heads" });
     }
 
-    const beforeRes = await sql.query`SELECT * FROM Accounts WHERE Id = ${id}`;
-    const beforeHead = beforeRes.recordset[0];
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Accounts
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
 
-    const afterRes = await sql.query`SELECT * FROM Accounts WHERE Id = ${id}`;
-    const afterHead = afterRes.recordset[0];
-    await auditService.logAction(userId, 'DELETE_ACCOUNT_HEAD', `Deleted Account Head (Id: ${id})`, req.ip, beforeHead, afterHead);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Head already deleted" });
+    }
 
+    await auditService.logAction(userId, 'DELETE_ACCOUNT_HEAD', `Deleted Account Head (Id: ${id})`, req.ip);
     res.status(200).json({ message: "Head deleted successfully" });
   } catch (error) {
     console.error("DELETE COA ERROR:", error);

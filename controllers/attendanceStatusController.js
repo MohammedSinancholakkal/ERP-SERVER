@@ -63,14 +63,18 @@ exports.addAttendanceStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO AttendanceStatuses (Name, InsertUserId)
-      VALUES (${name.trim()}, ${userId})
+      INSERT INTO AttendanceStatuses (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_ATTENDANCE_STATUS', `Created Attendance Status: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_ATTENDANCE_STATUS', `Created Attendance Status: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Attendance status added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Attendance status already exists" });
+    }
     console.log("ADD ATTENDANCE STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -87,20 +91,24 @@ exports.updateAttendanceStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM AttendanceStatuses WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE AttendanceStatuses
-      SET Name = ${name.trim()},
+      SET Name = ${trimmedName},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_ATTENDANCE_STATUS', `Updated Attendance Status: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_ATTENDANCE_STATUS', `Updated Attendance Status: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendance status updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Attendance status name already exists" });
+    }
     console.log("UPDATE ATTENDANCE STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -114,13 +122,17 @@ exports.deleteAttendanceStatus = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE AttendanceStatuses
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Attendance status already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_ATTENDANCE_STATUS', `Deleted Attendance Status (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Attendance status deleted successfully" });
@@ -196,14 +208,7 @@ exports.restoreAttendanceStatus = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM AttendanceStatuses WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM AttendanceStatuses WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE AttendanceStatuses
       SET 
         IsActive = 1,
@@ -211,12 +216,18 @@ exports.restoreAttendanceStatus = async (req, res) => {
         UpdateDate = GETDATE(),
         DeleteUserId = NULL,
         DeleteDate = NULL
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_ATTENDANCE_STATUS', `Restored Attendance Status: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Attendance status already restored or not found" });
+    }
+
     res.status(200).json({ message: "Attendance status restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
+    }
     console.log("RESTORE ATTENDANCE STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

@@ -62,14 +62,18 @@ exports.addResolutionStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO ResolutionStatuses (Name, InsertUserId)
-      VALUES (${name.trim()}, ${userId})
+      INSERT INTO ResolutionStatuses (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_RESOLUTION_STATUS', `Created Resolution Status: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_RESOLUTION_STATUS', `Created Resolution Status: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Resolution status added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Resolution status already exists" });
+    }
     console.log("ADD RESOLUTION STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -86,20 +90,24 @@ exports.updateResolutionStatus = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM ResolutionStatuses WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE ResolutionStatuses
-      SET Name = ${name.trim()},
+      SET Name = ${trimmedName},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_RESOLUTION_STATUS', `Updated Resolution Status: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_RESOLUTION_STATUS', `Updated Resolution Status: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Resolution status updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Resolution status name already exists" });
+    }
     console.log("UPDATE RESOLUTION STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -113,13 +121,17 @@ exports.deleteResolutionStatus = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE ResolutionStatuses
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Resolution status already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_RESOLUTION_STATUS', `Deleted Resolution Status (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Resolution status deleted successfully" });
@@ -193,14 +205,7 @@ exports.restoreResolutionStatus = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM ResolutionStatuses WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM ResolutionStatuses WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active resolution status with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE ResolutionStatuses
       SET 
         IsActive = 1,
@@ -208,13 +213,19 @@ exports.restoreResolutionStatus = async (req, res) => {
         UpdateDate = GETDATE(),
         DeleteUserId = NULL,
         DeleteDate = NULL
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_RESOLUTION_STATUS', `Restored Resolution Status: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Resolution status already restored or not found" });
+    }
+
     res.status(200).json({ message: "Resolution status restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active resolution status with this name already exists." });
+    }
     console.log("RESTORE RESOLUTION STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

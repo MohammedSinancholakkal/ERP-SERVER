@@ -53,34 +53,27 @@ exports.getAllBrands = async (req, res) => {
 };
 
 
-// =============================================================
-// ADD BRAND
-// =============================================================
 exports.addBrand = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
-    // DUPLICATE CHECK
-    const check = await sql.query`SELECT Id FROM Brands WHERE Name = ${name}`;
-    if (check.recordset.length > 0) {
-      return res.status(409).json({ message: "Brand name already exists" });
-    }
-
-    const result = await sql.query`
-      INSERT INTO Brands (Name, Description, InsertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${name}, ${description}, ${userId})
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO Brands (Name, Description, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${description}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const newId = idResult_newId.recordset[0].Id;
 
-    const newId = result.recordset[0].Id;
-
-    await auditService.logAction(userId, 'CREATE_BRAND', `Created Brand: ${name}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_BRAND', `Created Brand: ${trimmedName}`, req.ip);
     res.status(200).json({ 
         message: "Brand added successfully",
-        record: { id: newId, name, description }
+        record: { id: newId, name: trimmedName, description }
     });
-
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Brand already exists" });
+    }
     console.error("ADD BRAND ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -95,29 +88,27 @@ exports.updateBrand = async (req, res) => {
   const { name, description, userId } = req.body;
 
   try {
-    // DUPLICATE CHECK
-    const check = await sql.query`SELECT Id FROM Brands WHERE Name = ${name} AND Id != ${id}`;
-    if (check.recordset.length > 0) {
-      return res.status(409).json({ message: "Brand name already exists" });
-    }
-
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM Brands WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE Brands 
       SET 
-        Name = ${name},
+        Name = ${trimmedName},
         Description = ${description},
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_BRAND', `Updated Brand: ${oldName} -> ${name} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_BRAND', `Updated Brand: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Brand with this name already exists" });
+    }
     console.error("UPDATE BRAND ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -132,18 +123,21 @@ exports.deleteBrand = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Brands 
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Brand already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_BRAND', `Deleted Brand (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand deleted successfully" });
-
   } catch (error) {
     console.error("DELETE BRAND ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -208,23 +202,25 @@ exports.restoreBrand = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM Brands WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkName = await sql.query`SELECT Id FROM Brands WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkName.recordset.length > 0) {
-        return res.status(409).json({ message: "Cannot restore. An active brand with this name already exists." });
-    }
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Brands
       SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
-    await auditService.logAction(userId, 'RESTORE_BRAND', `Restored Brand: ${Name} (ID: ${id})`, req.ip);
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Brand already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT Name FROM Brands WHERE Id = ${id}`;
+    const name = item.recordset.length > 0 ? item.recordset[0].Name : "Unknown";
+
+    await auditService.logAction(userId, 'RESTORE_BRAND', `Restored Brand: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Brand restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active brand with this name already exists." });
+    }
     console.error("RESTORE BRAND ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

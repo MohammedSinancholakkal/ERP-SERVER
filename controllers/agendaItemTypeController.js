@@ -5,10 +5,10 @@ const auditService = require("../services/auditService");
 // GET ALL AGENDA ITEM TYPES
 // ================================  
 exports.getAllAgendaItemTypes = async (req, res) => {
-  try { 
+  try {    
     // Pagination inputs       
     let page = parseInt(req.query.page) || 1;   
-    let limit = parseInt(req.query.limit) || 25;    
+    let limit = parseInt(req.query.limit) || 25;      
     let offset = (page - 1) * limit;
 
     // Count total active records
@@ -63,14 +63,18 @@ exports.addAgendaItemType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO AgendaItemTypes (Name, InsertUserId)
-      VALUES (${name.trim()}, ${userId})
+      INSERT INTO AgendaItemTypes (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;  
 
-    await auditService.logAction(userId, 'CREATE_AGENDA_ITEM_TYPE', `Created Agenda Item Type: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_AGENDA_ITEM_TYPE', `Created Agenda Item Type: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Agenda item type added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Agenda item type already exists" });
+    }
     console.log("ADD AGENDA ITEM TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -87,20 +91,24 @@ exports.updateAgendaItemType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM AgendaItemTypes WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE AgendaItemTypes
-      SET Name = ${name.trim()},
+      SET Name = ${trimmedName},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_AGENDA_ITEM_TYPE', `Updated Agenda Item Type: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_AGENDA_ITEM_TYPE', `Updated Agenda Item Type: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Agenda item type updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Agenda item type name already exists" });
+    }
     console.log("UPDATE AGENDA ITEM TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -114,13 +122,17 @@ exports.deleteAgendaItemType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE AgendaItemTypes
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Agenda item type already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_AGENDA_ITEM_TYPE', `Deleted Agenda Item Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Agenda item type deleted successfully" });
@@ -193,14 +205,7 @@ exports.restoreAgendaItemType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM AgendaItemTypes WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM AgendaItemTypes WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE AgendaItemTypes
       SET 
         IsActive = 1,
@@ -208,13 +213,19 @@ exports.restoreAgendaItemType = async (req, res) => {
         UpdateDate = GETDATE(),
         DeleteUserId = NULL,
         DeleteDate = NULL
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_AGENDA_ITEM_TYPE', `Restored Agenda Item Type: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Agenda item type already restored or not found" });
+    }
+
     res.status(200).json({ message: "Agenda item type restored successfully" });
 
   } catch (err) {
+    if (err.number === 2627 || err.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active item with this name already exists." });
+    }
     console.log("RESTORE AGENDA ITEM TYPE ERROR:", err);
     res.status(500).json({ message: "Server Error" });
   }

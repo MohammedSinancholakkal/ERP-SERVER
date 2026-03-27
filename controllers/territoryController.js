@@ -22,7 +22,6 @@ exports.getAllTerritories = async (req, res) => {
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
 
-    
     let sortColumn = "t.id";
     if (sortBy === "name") sortColumn = "t.territoryDescription";
     else if (sortBy === "regionName") sortColumn = "r.regionName";
@@ -73,28 +72,23 @@ exports.addTerritory = async (req, res) => {
   }
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT id, territoryDescription AS name FROM Territories WHERE territoryDescription = ${territoryDescription} AND regionId = ${regionId} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-            message: "Territory already exists", 
-            record: check.recordset[0]
-        });
-    }
-
-    const result = await sql.query`
-      INSERT INTO Territories (territoryDescription, regionId, insertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${territoryDescription}, ${regionId}, ${userId})
+    const trimmedDesc = territoryDescription.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO Territories (territoryDescription, regionId, insertUserId, isActive)
+      VALUES (${trimmedDesc}, ${regionId}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
-    await auditService.logAction(userId, 'CREATE_TERRITORY', `Created Territory: ${territoryDescription} (ID: ${newId})`, req.ip);
+    const newId = idResult_newId.recordset[0].Id;
+    
+    await auditService.logAction(userId, 'CREATE_TERRITORY', `Created Territory: ${trimmedDesc} (ID: ${newId})`, req.ip);
     res.status(201).json({ 
         message: "Territory added successfully",
-        record: { id: newId, name: territoryDescription, regionId }
+        record: { id: newId, name: trimmedDesc, regionId }
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Territory already exists" });
+    }
     console.log("ADD TERRITORY ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -114,7 +108,7 @@ exports.updateTerritory = async (req, res) => {
     await sql.query`
       UPDATE Territories
       SET 
-        territoryDescription = ${territoryDescription},
+        territoryDescription = ${territoryDescription.trim()},
         regionId = ${regionId},
         updateUserId = ${userId},
         updateDate = GETDATE()
@@ -124,6 +118,9 @@ exports.updateTerritory = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_TERRITORY', `Updated Territory: ${oldName} -> ${territoryDescription} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Territory with this description already exists in this region" });
+    }
     console.log("UPDATE TERRITORY ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -137,14 +134,18 @@ exports.deleteTerritory = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Territories
       SET 
         isActive = 0,
         deleteUserId = ${userId},
         deleteDate = GETDATE()
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Territory already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_TERRITORY', `Deleted Territory (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory deleted successfully" });
@@ -153,9 +154,6 @@ exports.deleteTerritory = async (req, res) => {
     res.status(500).json({ message: "Server Error" });
   }
 };
-
-
-
 
 // =============================================================
 // SEARCH TERRITORIES
@@ -167,7 +165,6 @@ exports.searchTerritories = async (req, res) => {
       const sortBy = req.query.sortBy || "id";
       const order = (req.query.order || "DESC").toUpperCase();
 
-      
       let sortColumn = "t.id";
       if (sortBy === "name") sortColumn = "t.territoryDescription";
       else if (sortBy === "regionName") sortColumn = "r.regionName";
@@ -208,9 +205,7 @@ exports.searchTerritories = async (req, res) => {
     }
   };
   
-
-
-  // ================================
+// ================================
 // GET INACTIVE TERRITORIES
 // ================================
 exports.getInactiveTerritories = async (req, res) => {
@@ -244,14 +239,7 @@ exports.restoreTerritory = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT territoryDescription, regionId FROM Territories WHERE id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { territoryDescription, regionId } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT id FROM Territories WHERE LOWER(territoryDescription) = LOWER(${territoryDescription.trim()}) AND regionId = ${regionId} AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active territory with this description already exists in the same region." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Territories
       SET 
         isActive = 1,
@@ -259,12 +247,22 @@ exports.restoreTerritory = async (req, res) => {
         deleteDate = NULL,
         updateUserId = ${userId},
         updateDate = GETDATE()
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Territory already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT territoryDescription FROM Territories WHERE id = ${id}`;
+    const territoryDescription = item.recordset.length > 0 ? item.recordset[0].territoryDescription : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_TERRITORY', `Restored Territory: ${territoryDescription} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Territory restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active territory with this description already exists in the same region." });
+    }
     console.log("RESTORE TERRITORY ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

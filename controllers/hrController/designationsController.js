@@ -64,28 +64,21 @@ exports.addDesignation = async (req, res) => {
   const { designation, description, parentDesignationId, userId } = req.body;
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT Id AS id, Designation AS name FROM Designations WHERE Designation = ${designation} AND IsActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-            message: "Designation already exists", 
-            record: check.recordset[0]
-        });
-    }
-
-    const result = await sql.query`
+    const idResult_newId = await sql.query`
       INSERT INTO Designations (Designation, Description, ParentDesignationId, InsertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${designation}, ${description}, ${parentDesignationId || null}, ${userId})
+      VALUES (${designation.trim()}, ${description}, ${parentDesignationId || null}, ${userId});
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
+    const newId = idResult_newId.recordset[0].Id;
     await auditService.logAction(userId, 'CREATE_DESIGNATION', `Created Designation: ${designation} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "Designation added successfully",
         record: { id: newId, name: designation }
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Designation already exists" });
+    }
     console.error("ADD DESIGNATION ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -105,7 +98,7 @@ exports.updateDesignation = async (req, res) => {
     await sql.query`
       UPDATE Designations
       SET
-        Designation = ${designation},
+        Designation = ${designation.trim()},
         Description = ${description},
         ParentDesignationId = ${parentDesignationId || null},
         UpdateDate = GETDATE(),
@@ -116,6 +109,9 @@ exports.updateDesignation = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_DESIGNATION', `Updated Designation: ${oldName} -> ${designation} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Designation with this name already exists" });
+    }
     console.error("UPDATE DESIGNATION ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -129,14 +125,18 @@ exports.deleteDesignation = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Designations
       SET
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Designation already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_DESIGNATION', `Deleted Designation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation deleted successfully" });
@@ -216,32 +216,27 @@ exports.restoreDesignation = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    // --- Duplicate Check Start ---
-    const targetResult = await sql.query`SELECT Designation FROM Designations WHERE Id = ${id}`;
-    if (targetResult.recordset.length > 0) {
-      const targetName = targetResult.recordset[0].Designation;
-      const duplicateCheck = await sql.query`
-        SELECT Id FROM Designations 
-        WHERE Designation = ${targetName} AND IsActive = 1
-      `;
-      if (duplicateCheck.recordset.length > 0) {
-        return res.status(409).json({ message: "An active designation with this name already exists. Cannot restore." });
-      }
-    }
-    // --- Duplicate Check End ---
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Designations
       SET
         IsActive = 1,
         UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
-      WHERE Id = ${id}
+        UpdateUserId = ${userId},
+        DeleteDate = NULL,
+        DeleteUserId = NULL
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Designation already restored or not found" });
+    }
 
     await auditService.logAction(userId, 'RESTORE_DESIGNATION', `Restored Designation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Designation restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active designation with this name already exists." });
+    }
     console.error("RESTORE DESIGNATION ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

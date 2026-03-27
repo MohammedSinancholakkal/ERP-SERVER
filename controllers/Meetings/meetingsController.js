@@ -153,7 +153,6 @@ exports.addMeeting = async (req, res) => {
 
 
 
-
 // Convert IST → UTC (MANDATORY)
 const parsedStartDate = istToUTC(startDate);
 const parsedEndDate   = istToUTC(endDate);
@@ -165,23 +164,22 @@ const parsedEndDate   = istToUTC(endDate);
     const request = new sql.Request(transaction);
 
     // 1️⃣ INSERT MEETING AND RETURN NEW ID
-    const meetingResult = await request.query`
+    const idResult_meetingId = await request.query`
       INSERT INTO Meetings (
         MeetingName, MeetingTypeId, StartDate, EndDate,
         DepartmentId, LocationId, OrganizedBy, ReporterId,
         Recipients,
         InsertDate, InsertUserId, IsActive
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${meetingName}, ${mtInt}, ${parsedStartDate}, ${parsedEndDate},
         ${deptInt}, ${locInt}, ${orgInt}, ${repInt},
         ${req.body.recipients ? req.body.recipients.join(',') : null},
-GETUTCDATE(), ${userIdInt}, 1
-      )
+        GETUTCDATE(), ${userIdInt}, 1
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const meetingId = meetingResult.recordset[0].Id;
+    const meetingId = idResult_meetingId.recordset[0].Id;
 
     // 2️⃣ INSERT ATTENDEES INTO MeetingAttendees TABLE
     if (Array.isArray(attendees)) {

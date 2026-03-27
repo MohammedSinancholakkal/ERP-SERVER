@@ -97,17 +97,22 @@ exports.addWarehouse = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
-    await sql.query`
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
       INSERT INTO Warehouses
-      (Name, Description, CountryId, StateId, CityId, Phone, Address, InsertUserId)
+      (Name, Description, CountryId, StateId, CityId, Phone, Address, InsertUserId, IsActive)
       VALUES
-      (${name.trim()}, ${description || null},
+      (${trimmedName}, ${description || null},
        ${countryId}, ${stateId}, ${cityId},
-       ${phone || null}, ${address || null}, ${userId})
+       ${phone || null}, ${address || null}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    res.status(201).json({ message: "Warehouse added successfully" });
+    const newId = idResult_newId.recordset[0].Id;
+    res.status(201).json({ message: "Warehouse added successfully", id: newId });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Warehouse already exists" });
+    }
     console.log("ADD WAREHOUSE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -146,6 +151,9 @@ exports.updateWarehouse = async (req, res) => {
 
     res.status(200).json({ message: "Warehouse updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Warehouse with this name already exists in this city" });
+    }
     console.log("UPDATE WAREHOUSE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -159,13 +167,17 @@ exports.deleteWarehouse = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Warehouses
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Warehouse already deleted" });
+    }
 
     res.status(200).json({ message: "Warehouse deleted successfully" });
   } catch (error) {
@@ -281,35 +293,26 @@ exports.restoreWarehouse = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name, CountryId, StateId, CityId FROM Warehouses WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name, CountryId, StateId, CityId } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`
-      SELECT Id 
-      FROM Warehouses 
-      WHERE LOWER(Name) = LOWER(${Name.trim()}) 
-        AND CountryId = ${CountryId} 
-        AND StateId = ${StateId}
-        AND CityId = ${CityId}
-        AND IsActive = 1
-    `;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active warehouse with this name already exists in the same city." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Warehouses
       SET IsActive = 1,
           DeleteUserId = NULL,
           DeleteDate = NULL,
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Warehouse already restored or not found" });
+    }
 
     res.status(200).json({ message: "Warehouse restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active warehouse with this name already exists in the same city." });
+    }
     console.log("RESTORE WAREHOUSE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
 };
-  

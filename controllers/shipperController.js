@@ -60,26 +60,28 @@ exports.getAllShippers = async (req, res) => {
 exports.addShipper = async (req, res) => {
     const { companyName, phone, userId } = req.body;
   
-    // Extract digits only
-const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
+    const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
 
     if (!companyName || !companyName.toString().trim())
       return res.status(400).json({ message: "Company name is required" });
   
-    // 💡 SERVER-SIDE PHONE VALIDATION
     const digits = extractDigits(phone);
     if (digits.length < 10)
       return res.status(400).json({ message: "Phone must contain at least 10 digits" });
   
     try {
+      const name = companyName.trim();
       await sql.query`
-        INSERT INTO Shippers (CompanyName, Phone, InsertUserId)
-        VALUES (${companyName.trim()}, ${digits}, ${userId})
+        INSERT INTO Shippers (CompanyName, Phone, InsertUserId, IsActive)
+        VALUES (${name}, ${digits}, ${userId}, 1)
       `;
   
-      await auditService.logAction(userId, 'CREATE_SHIPPER', `Created Shipper: ${companyName.trim()}`, req.ip);
+      await auditService.logAction(userId, 'CREATE_SHIPPER', `Created Shipper: ${name}`, req.ip);
       res.status(201).json({ message: "Shipper added successfully" });
     } catch (error) {
+      if (error.number === 2627 || error.number === 2601) {
+          return res.status(200).json({ message: "Shipper already exists" });
+      }
       console.log("ADD SHIPPER ERROR:", error);
       res.status(500).json({ message: "Server Error" });
     }
@@ -93,33 +95,35 @@ exports.updateShipper = async (req, res) => {
     const { id } = req.params;
     const { companyName, phone, userId } = req.body;
   
-    // Extract digits only
-const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
+    const extractDigits = (value) => (value || "").toString().replace(/\D/g, "");
     if (!companyName || !companyName.toString().trim())
       return res.status(400).json({ message: "Company name is required" });
   
-    // 💡 SERVER-SIDE PHONE VALIDATION
     const digits = extractDigits(phone);
     if (digits.length < 10)
       return res.status(400).json({ message: "Phone must contain at least 10 digits" });
   
     try {
+      const name = companyName.trim();
       const oldRes = await sql.query`SELECT CompanyName FROM Shippers WHERE Id = ${id}`;
       const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CompanyName : "Unknown";
 
       await sql.query`
         UPDATE Shippers
         SET 
-          CompanyName = ${companyName.trim()},
+          CompanyName = ${name},
           Phone = ${digits},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
         WHERE Id = ${id}
       `;
   
-      await auditService.logAction(userId, 'UPDATE_SHIPPER', `Updated Shipper: ${oldName} -> ${companyName.trim()} (ID: ${id})`, req.ip);
+      await auditService.logAction(userId, 'UPDATE_SHIPPER', `Updated Shipper: ${oldName} -> ${name} (ID: ${id})`, req.ip);
       res.status(200).json({ message: "Shipper updated successfully" });
     } catch (error) {
+      if (error.number === 2627 || error.number === 2601) {
+          return res.status(409).json({ message: "Shipper with this name already exists" });
+      }
       console.log("UPDATE SHIPPER ERROR:", error);
       res.status(500).json({ message: "Server Error" });
     }
@@ -134,14 +138,18 @@ exports.deleteShipper = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Shippers
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Shipper already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_SHIPPER', `Deleted Shipper (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Shipper deleted successfully" });
@@ -225,26 +233,29 @@ exports.restoreShipper = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT CompanyName FROM Shippers WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { CompanyName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM Shippers WHERE LOWER(CompanyName) = LOWER(${CompanyName.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active shipper with this company name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Shippers
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_SHIPPER', `Restored Shipper: ${CompanyName} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Shipper already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT CompanyName FROM Shippers WHERE Id = ${id}`;
+    const name = item.recordset.length > 0 ? item.recordset[0].CompanyName : "Unknown";
+
+    await auditService.logAction(userId, 'RESTORE_SHIPPER', `Restored Shipper: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Shipper restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active shipper with this company name already exists." });
+    }
     console.log("RESTORE SHIPPER ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

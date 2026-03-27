@@ -60,14 +60,20 @@ exports.addCurrency = async (req, res) => {
   const { currencyName, currencySymbol, userId } = req.body;
 
   try {
+    const name = currencyName?.trim();
+    const symbol = currencySymbol?.trim();
+
     await sql.query`
-      INSERT INTO Currencies (CurrencyName, CurrencySymbol, InsertUserId)
-      VALUES (${currencyName}, ${currencySymbol}, ${userId})
+      INSERT INTO Currencies (CurrencyName, CurrencySymbol, InsertUserId, IsActive)
+      VALUES (${name}, ${symbol}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_CURRENCY', `Created Currency: ${currencyName}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_CURRENCY', `Created Currency: ${name}`, req.ip);
     res.status(200).json({ message: "Currency added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Currency already exists" });
+    }
     console.error("ADD CURRENCY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -81,22 +87,28 @@ exports.updateCurrency = async (req, res) => {
   const { currencyName, currencySymbol, userId } = req.body;
 
   try {
+    const name = currencyName?.trim();
+    const symbol = currencySymbol?.trim();
+
     const oldRes = await sql.query`SELECT CurrencyName FROM Currencies WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].CurrencyName : "Unknown";
 
     await sql.query`
       UPDATE Currencies
       SET 
-        CurrencyName = ${currencyName},
-        CurrencySymbol = ${currencySymbol},
+        CurrencyName = ${name},
+        CurrencySymbol = ${symbol},
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_CURRENCY', `Updated Currency: ${oldName} -> ${currencyName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_CURRENCY', `Updated Currency: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Currency name or symbol already exists" });
+    }
     console.error("UPDATE CURRENCY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -110,14 +122,18 @@ exports.deleteCurrency = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Currencies
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Currency already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_CURRENCY', `Deleted Currency (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency deleted successfully" });
@@ -202,38 +218,28 @@ exports.restoreCurrency = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    // --- Duplicate Check Start ---
-    const targetResult = await sql.query`SELECT CurrencyName, CurrencySymbol FROM Currencies WHERE Id = ${id}`;
-    if (targetResult.recordset.length > 0) {
-      const target = targetResult.recordset[0];
-      const request = new sql.Request();
-      request.input('CurrencyName', sql.NVarChar, target.CurrencyName || '');
-      request.input('CurrencySymbol', sql.NVarChar, target.CurrencySymbol || '');
-
-      const dupCheckQuery = `
-        SELECT Id FROM Currencies 
-        WHERE IsActive = 1 AND (CurrencyName = @CurrencyName OR CurrencySymbol = @CurrencySymbol)
-      `;
-      const duplicateCheck = await request.query(dupCheckQuery);
-      if (duplicateCheck.recordset.length > 0) {
-        return res.status(409).json({ message: "An active currency with this name or symbol already exists. Cannot restore." });
-      }
-    }
-    // --- Duplicate Check End ---
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Currencies
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    const oldName = targetResult.recordset.length > 0 ? targetResult.recordset[0].CurrencyName : "Unknown";
-    await auditService.logAction(userId, 'RESTORE_CURRENCY', `Restored Currency: ${oldName} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Currency already restored or not found" });
+    }
+
+    const cur = await sql.query`SELECT CurrencyName FROM Currencies WHERE Id = ${id}`;
+    const name = cur.recordset.length > 0 ? cur.recordset[0].CurrencyName : "Unknown";
+
+    await auditService.logAction(userId, 'RESTORE_CURRENCY', `Restored Currency: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Currency restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. Currency name or symbol already exists." });
+    }
     console.error("RESTORE CURRENCY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

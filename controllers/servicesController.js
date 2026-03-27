@@ -54,18 +54,22 @@ exports.addService = async (req, res) => {
     return res.status(400).json({ message: "Required fields missing" });
 
   try {
+    const trimmedName = ServiceName.trim();
     await sql.query`
       INSERT INTO Services (
-        ServiceName, Charge, Description, Tax, InsertUserId
+        ServiceName, Charge, Description, Tax, InsertUserId, IsActive
       )
       VALUES (
-        ${ServiceName}, ${Charge}, ${Description}, ${Tax}, ${userId}
+        ${trimmedName}, ${Charge}, ${Description}, ${Tax}, ${userId}, 1
       )
     `;
 
-    await auditService.logAction(userId, 'CREATE_SERVICE', `Created Service: ${ServiceName}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_SERVICE', `Created Service: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Service added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Service already exists" });
+    }
     console.log("ADD SERVICE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -82,13 +86,14 @@ exports.updateService = async (req, res) => {
     return res.status(400).json({ message: "Required fields missing" });
 
   try {
+    const trimmedName = ServiceName.trim();
     const oldRes = await sql.query`SELECT ServiceName FROM Services WHERE id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].ServiceName : "Unknown";
 
     await sql.query`
       UPDATE Services
       SET 
-        ServiceName = ${ServiceName},
+        ServiceName = ${trimmedName},
         Charge = ${Charge},
         Description = ${Description},
         Tax = ${Tax},
@@ -97,9 +102,12 @@ exports.updateService = async (req, res) => {
       WHERE id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_SERVICE', `Updated Service: ${oldName} -> ${ServiceName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_SERVICE', `Updated Service: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Service name already exists" });
+    }
     console.log("UPDATE SERVICE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -113,14 +121,18 @@ exports.deleteService = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Services
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE id = ${id}
+      WHERE id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Service already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_SERVICE', `Deleted Service (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service deleted successfully" });
@@ -205,14 +217,7 @@ exports.restoreService = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT ServiceName FROM Services WHERE id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { ServiceName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT id FROM Services WHERE LOWER(ServiceName) = LOWER(${ServiceName.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active service with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Services
       SET 
         IsActive = 1,
@@ -220,12 +225,19 @@ exports.restoreService = async (req, res) => {
         DeleteDate = NULL,
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
-      WHERE id = ${id}
+      WHERE id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Service already restored or not found" });
+    }
 
     await auditService.logAction(userId, 'RESTORE_SERVICE', `Restored Service (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Service restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active service with this name already exists." });
+    }
     console.log("RESTORE SERVICE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

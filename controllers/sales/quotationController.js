@@ -1,7 +1,6 @@
 const sql = require("../../db/dbConfig");
 const auditService = require("../../services/auditService");
 
-
 // GET NEXT QUOTATION NO
 exports.getNextQuotationNo = async (req, res) => {
   try {
@@ -32,34 +31,24 @@ exports.getNextQuotationNo = async (req, res) => {
 };
 
 
-// GET ALL QUOTATIONS (Paginated) - fixed
+// GET ALL QUOTATIONS (Paginated)
 exports.getAllQuotations = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    // total count
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
       FROM Quotations
       WHERE IsActive = 1
     `;
-
     const total = totalResult.recordset?.[0]?.Total || 0;
     const totalPages = Math.max(1, Math.ceil(total / limit));
 
-    // select all required columns and alias to camelCase used in frontend
-    // select all required columns and alias to camelCase used in frontend
-    
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
-
-    
     let sortColumn = "Q.InsertDate"; 
-    
-    // Mapping
-    // Note: To sort by Customer Name, we must JOIN Customers
     switch (sortBy) {
         case "id": sortColumn = "Q.Id"; break;
         case "customerName": sortColumn = "C.Name"; break;
@@ -70,34 +59,10 @@ exports.getAllQuotations = async (req, res) => {
         case "vehicleNo": sortColumn = "Q.VehicleNo"; break;
         default: sortColumn = "Q.InsertDate";
     }
-
-    if (!req.query.sortBy) {
-        sortColumn = "Q.Id";
-        // Default order is ASC if unspecified (handled above defaults)
-    }
+    if (!req.query.sortBy) sortColumn = "Q.Id";
 
     const query = `
-      SELECT
-        Q.Id AS id,
-        Q.QuotationNo AS quotationNo,
-        Q.CustomerId AS customerId,
-        C.Name AS customerName,
-        Q.Date AS date,
-        Q.ExpiryDate AS expiryDate,
-        Q.Discount AS discount,
-        Q.TotalDiscount AS totalDiscount,
-        Q.TotalTax AS totalTax,
-        Q.NoTax AS noTax,
-        Q.ShippingCost AS shippingCost,
-        Q.GrandTotal AS grandTotal,
-        Q.NetTotal AS netTotal,
-        Q.Details AS details,
-        Q.VehicleNo AS vehicleNo,
-        Q.TaxTypeId AS taxTypeId,
-        Q.IGSTRate AS igstRate,
-        Q.CGSTRate AS cgstRate,
-        Q.SGSTRate AS sgstRate,
-        Q.InsertDate AS insertDate
+      SELECT Q.*, Q.Id AS id, C.Name AS customerName
       FROM Quotations Q
       LEFT JOIN Customers C ON Q.CustomerId = C.Id
       WHERE Q.IsActive = 1
@@ -105,449 +70,115 @@ exports.getAllQuotations = async (req, res) => {
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
     `;
-
     const result = await sql.query(query);
-
-    res.status(200).json({
-      totalRecords: total,
-      totalPages,
-      records: result.recordset
-    });
-
-  } catch (error) {
-    console.error("QUOTATIONS ERROR:", error);
-    res.status(500).json({ message: "Error loading quotations" });
-  }
+    res.status(200).json({ totalRecords: total, totalPages, records: result.recordset });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-
-// =============================================================
-// GET QUOTATION BY ID (WITH DETAILS)
-// =============================================================
+// GET QUOTATION BY ID
 exports.getQuotationById = async (req, res) => {
   const id = parseInt(req.params.id, 10);
-
-  if (isNaN(id)) {
-    return res.status(400).json({ message: "Invalid quotation ID" });
-  }
-
   try {
     const quotation = await sql.query`
-      SELECT q.*, 
-             c.Name as CustomerName, 
-             c.AddressLine1 as CustomerAddress, 
-             c.AddressLine2 as AddressLine2,
-             c.GSTTIN as CustomerGSTIN
-      FROM Quotations q
-      LEFT JOIN Customers c ON q.CustomerId = c.Id
+      SELECT q.*, c.Name as CustomerName, c.AddressLine1 as CustomerAddress, c.AddressLine2 as AddressLine2, c.GSTTIN as CustomerGSTIN
+      FROM Quotations q LEFT JOIN Customers c ON q.CustomerId = c.Id
       WHERE q.Id = ${id}
     `;
-
     const details = await sql.query`
-      SELECT 
-        qd.Id AS id,
-        qd.ProductId AS productId,
-        qd.ProductName AS productName,
-        qd.Description AS description,
-        qd.UnitId AS unitId,
-        qd.UnitName AS unitName,
-        qd.Quantity AS quantity,
-        qd.UnitPrice AS unitPrice,
-        qd.Discount AS discount,
-        qd.Total AS total,
-        p.BrandId AS brandId,
-        p.HSNCode AS hsnCode
-      FROM QuotationDetails qd
-      LEFT JOIN Products p ON qd.ProductId = p.Id
+      SELECT qd.*, qd.Id AS id, p.BrandId AS brandId, p.HSNCode AS hsnCode
+      FROM QuotationDetails qd LEFT JOIN Products p ON qd.ProductId = p.Id
       WHERE qd.QuotationId = ${id} AND qd.IsActive = 1
     `;
-
-    res.status(200).json({
-      quotation: quotation.recordset[0],
-      details: details.recordset
-    });
-  } catch (error) {
-    console.error("GET QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.status(200).json({ quotation: quotation.recordset[0], details: details.recordset });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-
-// =============================================================
-// ADD QUOTATION (MASTER + DETAILS)
-// =============================================================
+// ADD QUOTATION
 exports.addQuotation = async (req, res) => {
-  const {
-    customerId,
-    quotationNo,
-    date,
-    expiryDate,
-    discount,
-    totalDiscount,
-    totalTax,
-    noTax,
-    shippingCost,
-    grandTotal,
-    netTotal,
-    details,
-    taxTypeId,
-    igstRate,
-    cgstRate,
-    sgstRate,
-    vehicleNo,
-    items, // QuotationDetails array
-    userId
-  } = req.body;
-
+  const { customerId, quotationNo, date, expiryDate, discount, totalDiscount, totalTax, noTax, shippingCost, grandTotal, netTotal, details, taxTypeId, igstRate, cgstRate, sgstRate, vehicleNo, items, userId } = req.body;
   const transaction = new sql.Transaction();
-
   try {
     await transaction.begin();
-
-    // ---------- MASTER INSERT
     const masterReq = new sql.Request(transaction);
-
-    const quotationResult = await masterReq.query`
-      INSERT INTO Quotations (
-        CustomerId, QuotationNo, Date, ExpiryDate,
-        Discount, TotalDiscount,
-        TotalTax, NoTax,
-        ShippingCost, GrandTotal, NetTotal,
-        Details, VehicleNo, TaxTypeId, IGSTRate, CGSTRate, SGSTRate, InsertUserId
-      )
-      OUTPUT INSERTED.Id
-      VALUES (
-        ${customerId}, ${quotationNo}, ${date}, ${expiryDate},
-        ${discount}, ${totalDiscount},
-        ${totalTax}, ${noTax || 0},
-        ${shippingCost}, ${grandTotal}, ${netTotal},
-        ${details}, ${vehicleNo || ""}, ${taxTypeId || null}, ${igstRate || 0}, ${cgstRate || 0}, ${sgstRate || 0}, ${userId}
-      )
+    const idResult_quotationId = await masterReq.query`
+      INSERT INTO Quotations (CustomerId, QuotationNo, Date, ExpiryDate, Discount, TotalDiscount, TotalTax, NoTax, ShippingCost, GrandTotal, NetTotal, Details, VehicleNo, TaxTypeId, IGSTRate, CGSTRate, SGSTRate, InsertUserId)
+      VALUES (${customerId}, ${quotationNo}, ${date}, ${expiryDate}, ${discount}, ${totalDiscount}, ${totalTax}, ${noTax || 0}, ${shippingCost}, ${grandTotal}, ${netTotal}, ${details}, ${vehicleNo || ""}, ${taxTypeId || null}, ${igstRate || 0}, ${cgstRate || 0}, ${sgstRate || 0}, ${userId});
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const quotationId = idResult_quotationId.recordset[0].Id;
 
-    const quotationId = quotationResult.recordset[0].Id;
-
-    // ---------- DETAILS INSERT
     for (const item of items) {
-      const detailReq = new sql.Request(transaction);
-
-      await detailReq.query`
-        INSERT INTO QuotationDetails (
-          ProductId, ProductName, Description,
-          UnitId, UnitName,
-          Quantity, UnitPrice, Discount, Total,
-          QuotationId, InsertUserId
-        )
-        VALUES (
-          ${item.productId}, ${item.productName}, ${item.description},
-          ${item.unitId}, ${item.unitName},
-          ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total},
-          ${quotationId}, ${userId}
-        )
+      await new sql.Request(transaction).query`
+        INSERT INTO QuotationDetails (ProductId, ProductName, Description, UnitId, UnitName, Quantity, UnitPrice, Discount, Total, QuotationId, InsertUserId)
+        VALUES (${item.productId}, ${item.productName}, ${item.description}, ${item.unitId}, ${item.unitName}, ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total}, ${quotationId}, ${userId})
       `;
     }
-
     await transaction.commit();
     await auditService.logAction(userId, 'CREATE_QUOTATION', `Created Quotation (No: ${quotationNo}, Net Total: ${netTotal})`, req.ip);
-    res.status(200).json({ message: "Quotation added successfully" });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("ADD QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.status(200).json({ message: "Quotation added" });
+  } catch (error) { await transaction.rollback(); res.status(500).json({ message: "Error" }); }
 };
 
-// =============================================================
-// UPDATE QUOTATION (MASTER + DETAILS)
-// =============================================================
+// UPDATE QUOTATION
 exports.updateQuotation = async (req, res) => {
   const { id } = req.params;
-
-  const {
-    customerId,
-    date,
-    expiryDate,
-    discount,
-    totalDiscount,
-    vat,
-    totalTax,
-    vatPercentage,
-    noTax,
-    vatType,
-    shippingCost,
-    grandTotal,
-    netTotal,
-    details,
-    taxTypeId,
-    igstRate,
-    cgstRate,
-    sgstRate,
-    vehicleNo,
-    items,
-    userId
-  } = req.body;
-
+  const { customerId, date, expiryDate, discount, totalDiscount, totalTax, noTax, shippingCost, grandTotal, netTotal, details, taxTypeId, igstRate, cgstRate, sgstRate, vehicleNo, items, userId } = req.body;
   const transaction = new sql.Transaction();
-
   try {
-    // Fetch current state for before-audit
-    const currentQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const currentQuotation = currentQuotationResult.recordset[0];
-
+    const currentQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
     await transaction.begin();
-
-    // ---------- UPDATE MASTER
-    const masterReq = new sql.Request(transaction);
-    await masterReq.query`
-      UPDATE Quotations
-      SET
-        CustomerId = ${customerId},
-        Date = ${date},
-        ExpiryDate = ${expiryDate},
-        Discount = ${discount},
-        TotalTax = ${totalTax},
-        NoTax = ${noTax || 0},
-        ShippingCost = ${shippingCost},
-        GrandTotal = ${grandTotal},
-        NetTotal = ${netTotal},
-        Details = ${details},
-        VehicleNo = ${vehicleNo || ""},
-        TaxTypeId = ${taxTypeId || null},
-        IGSTRate = ${igstRate || 0},
-        CGSTRate = ${cgstRate || 0},
-        SGSTRate = ${sgstRate || 0},
-        UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
-      WHERE Id = ${id}
-    `;
-
-    // ---------- REMOVE OLD DETAILS
-    const deleteReq = new sql.Request(transaction);
-    await deleteReq.query`
-      DELETE FROM QuotationDetails
-      WHERE QuotationId = ${id}
-    `;
-
-    // ---------- INSERT NEW DETAILS
+    await new sql.Request(transaction).query`UPDATE Quotations SET CustomerId = ${customerId}, Date = ${date}, ExpiryDate = ${expiryDate}, Discount = ${discount}, TotalTax = ${totalTax}, NoTax = ${noTax || 0}, ShippingCost = ${shippingCost}, GrandTotal = ${grandTotal}, NetTotal = ${netTotal}, Details = ${details}, VehicleNo = ${vehicleNo || ""}, TaxTypeId = ${taxTypeId || null}, IGSTRate = ${igstRate || 0}, CGSTRate = ${cgstRate || 0}, SGSTRate = ${sgstRate || 0}, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
+    await new sql.Request(transaction).query`DELETE FROM QuotationDetails WHERE QuotationId = ${id}`;
     for (const item of items) {
-      const detailReq = new sql.Request(transaction);
-      await detailReq.query`
-        INSERT INTO QuotationDetails (
-          ProductId, ProductName, Description,
-          UnitId, UnitName,
-          Quantity, UnitPrice, Discount, Total,
-          QuotationId, InsertUserId
-        )
-        VALUES (
-          ${item.productId}, ${item.productName}, ${item.description},
-          ${item.unitId}, ${item.unitName},
-          ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total},
-          ${id}, ${userId}
-        )
-      `;
+      await new sql.Request(transaction).query`INSERT INTO QuotationDetails (ProductId, ProductName, Description, UnitId, UnitName, Quantity, UnitPrice, Discount, Total, QuotationId, InsertUserId) VALUES (${item.productId}, ${item.productName}, ${item.description}, ${item.unitId}, ${item.unitName}, ${item.quantity}, ${item.unitPrice}, ${item.discount}, ${item.total}, ${id}, ${userId})`;
     }
-
     await transaction.commit();
-
-    // Fetch new state for after-audit
-    const updatedQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const updatedQuotation = updatedQuotationResult.recordset[0];
-
-    await auditService.logAction(userId, 'UPDATE_QUOTATION', `Updated Quotation (ID: ${id}) - Net Total: ${netTotal}`, req.ip, currentQuotation, updatedQuotation);
-    res.status(200).json({ message: "Quotation updated successfully" });
-
-  } catch (error) {
-    await transaction.rollback();
-    console.error("UPDATE QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    const updatedQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
+    await auditService.logAction(userId, 'UPDATE_QUOTATION', `Updated Quotation (ID: ${id})`, req.ip, currentQuotation, updatedQuotation);
+    res.status(200).json({ message: "Quotation updated" });
+  } catch (error) { await transaction.rollback(); res.status(500).json({ message: "Error" }); }
 };
 
-// =============================================================
-// DELETE QUOTATION (SOFT DELETE)
-// =============================================================
+// DELETE QUOTATION
 exports.deleteQuotation = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
-
   try {
-    // Fetch current state for before-audit
-    const currentQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const currentQuotation = currentQuotationResult.recordset[0];
-
-    await sql.query`
-      UPDATE Quotations
-      SET IsActive = 0,
-          DeleteDate = GETDATE(),
-          DeleteUserId = ${userId}
-      WHERE Id = ${id}
-    `;
-
-    await sql.query`
-      UPDATE QuotationDetails
-      SET IsActive = 0,
-          DeleteDate = GETDATE(),
-          DeleteUserId = ${userId}
-      WHERE QuotationId = ${id}
-    `;
-
-    // Fetch new state for after-audit
-    const deletedQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const deletedQuotation = deletedQuotationResult.recordset[0];
-
+    const currentQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
+    await sql.query`UPDATE Quotations SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE Id = ${id}`;
+    await sql.query`UPDATE QuotationDetails SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE QuotationId = ${id}`;
+    const deletedQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
     await auditService.logAction(userId, 'DELETE_QUOTATION', `Deleted Quotation (ID: ${id})`, req.ip, currentQuotation, deletedQuotation);
-    res.status(200).json({ message: "Quotation deleted successfully" });
-
-  } catch (error) {
-    console.error("DELETE QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.status(200).json({ message: "Quotation deleted" });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-// =============================================================
-// GET INACTIVE QUOTATIONS
-// =============================================================
+// INACTIVE & RESTORE
 exports.getInactiveQuotations = async (req, res) => {
   try {
-    const result = await sql.query`
-      SELECT
-        q.Id AS id,
-        q.CustomerId AS customerId,
-        c.Name AS customerName,
-        q.Date AS date,
-        q.ExpiryDate AS expiryDate,
-        q.GrandTotal AS grandTotal,
-        q.NetTotal AS netTotal,
-        q.Discount AS discount,
-        q.TotalDiscount AS totalDiscount,
-        q.Discount AS discount,
-        q.TotalDiscount AS totalDiscount,
-        q.TotalTax AS totalTax,
-        q.NoTax AS noTax,
-        q.ShippingCost AS shippingCost,
-        q.Details AS details,
-        q.TaxTypeId AS taxTypeId,
-        q.IGSTRate AS igstRate,
-        q.CGSTRate AS cgstRate,
-        q.SGSTRate AS sgstRate,
-        q.DeleteDate,
-        q.DeleteUserId
-      FROM Quotations q
-      LEFT JOIN Customers c ON q.CustomerId = c.Id
-      WHERE q.IsActive = 0
-      ORDER BY q.DeleteDate DESC
-    `;
-
+    const result = await sql.query`SELECT q.*, c.Name AS customerName FROM Quotations q LEFT JOIN Customers c ON q.CustomerId = c.Id WHERE q.IsActive = 0 ORDER BY q.DeleteDate DESC`;
     res.status(200).json({ records: result.recordset });
-
-  } catch (error) {
-    console.error("INACTIVE QUOTATIONS ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-// =============================================================
-// RESTORE QUOTATION
-// =============================================================
 exports.restoreQuotation = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
-
   try {
-    // Fetch current state for before-audit
-    const currentQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const currentQuotation = currentQuotationResult.recordset[0];
-
-    await sql.query`
-      UPDATE Quotations
-      SET IsActive = 1,
-          UpdateDate = GETDATE(),
-          UpdateUserId = ${userId}
-      WHERE Id = ${id}
-    `;
-
-    await sql.query`
-      UPDATE QuotationDetails
-      SET IsActive = 1
-      WHERE QuotationId = ${id}
-    `;
-
-    // Fetch new state for after-audit
-    const restoredQuotationResult = await sql.query`
-      SELECT * FROM Quotations WHERE Id = ${id}
-    `;
-    const restoredQuotation = restoredQuotationResult.recordset[0];
-
+    const currentQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
+    await sql.query`UPDATE Quotations SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
+    await sql.query`UPDATE QuotationDetails SET IsActive = 1 WHERE QuotationId = ${id}`;
+    const restoredQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
     await auditService.logAction(userId, 'RESTORE_QUOTATION', `Restored Quotation (ID: ${id})`, req.ip, currentQuotation, restoredQuotation);
-    res.status(200).json({ message: "Quotation restored successfully" });
-
-  } catch (error) {
-    console.error("RESTORE QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.status(200).json({ message: "Quotation restored" });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-
-// =============================================================
-// SEARCH QUOTATIONS
-// =============================================================
+// SEARCH
 exports.searchQuotation = async (req, res) => {
   const q = req.query.q;
-
-  if (!q || !q.trim()) {
-    return res.status(400).json({ message: "Search query is required" });
-  }
-
   try {
-    const result = await sql.query`
-      SELECT
-        Q.Id              AS id,
-        Q.QuotationNo     AS quotationNo,
-        Q.CustomerId      AS customerId,
-        C.Name            AS customerName,
-        Q.Date            AS date,
-        Q.ExpiryDate      AS expiryDate,
-        Q.Discount        AS discount,
-        Q.TotalDiscount   AS totalDiscount,
-        Q.TotalTax        AS totalTax,
-        Q.ShippingCost    AS shippingCost,
-        Q.GrandTotal      AS grandTotal,
-        Q.NetTotal        AS netTotal,
-        Q.VehicleNo       AS vehicleNo,
-        Q.TaxTypeId       AS taxTypeId,
-        Q.IGSTRate        AS igstRate,
-        Q.CGSTRate        AS cgstRate,
-        Q.SGSTRate        AS sgstRate,
-        Q.Details         AS details
-      FROM Quotations Q
-      LEFT JOIN Customers C ON Q.CustomerId = C.Id
-      WHERE Q.IsActive = 1
-        AND (
-          CAST(Q.Id AS NVARCHAR) LIKE ${'%' + q + '%'}
-          OR Q.QuotationNo LIKE ${'%' + q + '%'}
-          OR Q.VehicleNo LIKE ${'%' + q + '%'}
-          OR Q.Details LIKE ${'%' + q + '%'}
-          OR C.Name LIKE ${'%' + q + '%'}
-        )
-      ORDER BY Q.InsertDate DESC
-    `;
-
-    res.status(200).json({
-      records: result.recordset
-    });
-  } catch (error) {
-    console.error("SEARCH QUOTATION ERROR:", error);
-    res.status(500).json({ message: "Search failed" });
-  }
+    const result = await sql.query`SELECT Q.*, C.Name AS customerName FROM Quotations Q LEFT JOIN Customers C ON Q.CustomerId = C.Id WHERE Q.IsActive = 1 AND (CAST(Q.Id AS NVARCHAR) LIKE ${'%'+q+'%'} OR Q.QuotationNo LIKE ${'%'+q+'%'} OR C.Name LIKE ${'%'+q+'%'}) ORDER BY Q.InsertDate DESC`;
+    res.status(200).json({ records: result.recordset });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };

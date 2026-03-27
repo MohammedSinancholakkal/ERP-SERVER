@@ -197,19 +197,21 @@ exports.addBank = async (req, res) => {
   try {
     await transaction.begin();
 
+    const name = BankName?.trim();
+    const acNum = ACNumber?.trim();
+
     // If setting this bank as company bank, reset others first
     const isCompany = (String(isCompanyBank) === "true" || isCompanyBank === true) ? 1 : 0;
     const isInternal = (String(isInternalBank) === "true" || isInternalBank === true) ? 1 : 0;
     
     if (isCompany) {
-      // Deactivate others
       await transaction.request().query("UPDATE Banks SET IsCompanyBank = 0");
     }
 
     const insertRes = await transaction.request()
-      .input('bName', sql.VarChar, BankName)
+      .input('bName', sql.VarChar, name)
       .input('acName', sql.VarChar, ACName)
-      .input('acNum', sql.VarChar, ACNumber)
+      .input('acNum', sql.VarChar, acNum)
       .input('branch', sql.VarChar, Branch)
       .input('pic', sql.VarChar, filePath)
       .input('uid', sql.Int, userId)
@@ -217,20 +219,23 @@ exports.addBank = async (req, res) => {
       .input('isInt', sql.Bit, isInternal)
       .query(`
         INSERT INTO Banks (BankName, ACName, ACNumber, Branch, SignaturePicture, InsertUserId, IsCompanyBank, IsInternalBank, IsActive)
-        OUTPUT INSERTED.Id
         VALUES (@bName, @acName, @acNum, @branch, @pic, @uid, @isComp, @isInt, 1)
       `);
       
     const newBankId = insertRes.recordset[0].Id;
 
     // SYNC COA
-    await syncBankToCOA(transaction, newBankId, BankName, isCompany === 1 || isInternal === 1, userId);
+    await syncBankToCOA(transaction, newBankId, name, isCompany === 1 || isInternal === 1, userId);
 
     await transaction.commit();
-    await auditService.logAction(userId, 'CREATE_BANK', `Created Bank: ${BankName} (ID: ${newBankId})`, req.ip);
+    await auditService.logAction(userId, 'CREATE_BANK', `Created Bank: ${name} (ID: ${newBankId})`, req.ip);
     res.status(201).json({ message: "Bank added successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
+    if (err.number === 2627 || err.number === 2601) {
+         if (filePath) deleteFile(filePath);
+         return res.status(200).json({ message: "Bank already exists" });
+    }
     console.error("ADD BANK ERROR:", err);
     if (filePath) deleteFile(filePath);
     res.status(500).json({ message: "Server Error" });
@@ -248,6 +253,9 @@ exports.updateBank = async (req, res) => {
   const transaction = new sql.Transaction(pool);
 
   try {
+    const name = BankName?.trim();
+    const acNum = ACNumber?.trim();
+
     const old = await pool.request()
       .input('id', sql.Int, id)
       .query("SELECT BankName, SignaturePicture FROM Banks WHERE Id = @id");
@@ -280,9 +288,9 @@ exports.updateBank = async (req, res) => {
     }
 
     await transaction.request()
-      .input('name', sql.VarChar, BankName)
+      .input('name', sql.VarChar, name)
       .input('acName', sql.VarChar, ACName)
-      .input('acNum', sql.VarChar, ACNumber)
+      .input('acNum', sql.VarChar, acNum)
       .input('branch', sql.VarChar, Branch)
       .input('pic', sql.VarChar, finalImage)
       .input('uid', sql.Int, userId)
@@ -304,17 +312,20 @@ exports.updateBank = async (req, res) => {
       `);
 
     // SYNC COA
-    await syncBankToCOA(transaction, id, BankName, isCompany === 1 || isInternal === 1, userId);
+    await syncBankToCOA(transaction, id, name, isCompany === 1 || isInternal === 1, userId);
 
     await transaction.commit();
 
     // Replace file physically
     if (req.file && oldImage) deleteFile(oldImage);
 
-    await auditService.logAction(userId, 'UPDATE_BANK', `Updated Bank: ${oldBankName} -> ${BankName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_BANK', `Updated Bank: ${oldBankName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Bank updated successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
+    if (err.number === 2627 || err.number === 2601) {
+        return res.status(409).json({ message: "Bank name or account number already exists" });
+    }
     console.error("UPDATE BANK ERROR:", err);
     res.status(500).json({ message: "Server Error" });
   }
@@ -338,7 +349,7 @@ exports.deleteBank = async (req, res) => {
 
     await transaction.begin();
 
-    await transaction.request()
+    const result = await transaction.request()
       .input('uid', sql.Int, userId)
       .input('id', sql.Int, id)
       .query(`
@@ -346,8 +357,13 @@ exports.deleteBank = async (req, res) => {
         SET IsActive = 0,
             DeleteUserId = @uid,
             DeleteDate = GETDATE()
-        WHERE Id = @id
+        WHERE Id = @id AND IsActive = 1
       `);
+
+    if (result.rowsAffected[0] === 0) {
+        await transaction.rollback();
+        return res.status(200).json({ message: "Bank already deleted" });
+    }
 
     // SOFT DELETE COA LINK
     await transaction.request()
@@ -452,30 +468,9 @@ exports.restoreBank = async (req, res) => {
   const transaction = new sql.Transaction(pool);
 
   try {
-    // 1. Get the BankName and ACNumber of the bank being restored
-    const bankToRestoreRes = await pool.request()
-      .input('id', sql.Int, id)
-      .query(`SELECT BankName, ACNumber FROM Banks WHERE Id = @id`);
-
-    if (bankToRestoreRes.recordset.length === 0) {
-      return res.status(404).json({ message: "Bank not found" });
-    }
-    const { BankName, ACNumber } = bankToRestoreRes.recordset[0];
-
-    // 2. Check if an active bank with this name or account number already exists
-    const checkDuplicateRes = await pool.request()
-      .input('bName', sql.VarChar, BankName)
-      .input('acNum', sql.VarChar, ACNumber)
-      .query(`SELECT Id FROM Banks WHERE (BankName = @bName OR ACNumber = @acNum) AND IsActive = 1`);
-
-    if (checkDuplicateRes.recordset.length > 0) {
-      return res.status(409).json({ message: "Cannot restore. An active bank with this name or account number already exists." });
-    }
-
     await transaction.begin();
 
-    // Restore Bank
-    await transaction.request()
+    const result = await transaction.request()
       .input('uid', sql.Int, userId)
       .input('id', sql.Int, id)
       .query(`
@@ -483,27 +478,32 @@ exports.restoreBank = async (req, res) => {
         SET IsActive = 1,
             UpdateUserId = @uid,
             UpdateDate = GETDATE()
-        WHERE Id = @id
+        WHERE Id = @id AND IsActive = 0
       `);
+
+    if (result.rowsAffected[0] === 0) {
+        await transaction.rollback();
+        return res.status(200).json({ message: "Bank already restored" });
+    }
 
     // Get Bank Info to Sync COA
     const bankRes = await transaction.request()
         .input('id', sql.Int, id)
         .query("SELECT BankName, IsCompanyBank, IsInternalBank FROM Banks WHERE Id = @id");
         
-    if (bankRes.recordset.length > 0) {
-        const bank = bankRes.recordset[0];
-        // Trigger Sync if strictly company OR internal
-        const isEligible = bank.IsCompanyBank || bank.IsInternalBank;
-        await syncBankToCOA(transaction, id, bank.BankName, isEligible, userId);
-    }
+    const bank = bankRes.recordset[0];
+    const isEligible = bank.IsCompanyBank || bank.IsInternalBank;
+    await syncBankToCOA(transaction, id, bank.BankName, isEligible, userId);
     
     await transaction.commit();
 
-    await auditService.logAction(userId, 'RESTORE_BANK', `Restored Bank: ${BankName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'RESTORE_BANK', `Restored Bank: ${bank.BankName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Bank restored successfully" });
   } catch (err) {
     if (transaction) await transaction.rollback();
+    if (err.number === 2627 || err.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. Bank name or account number already exists." });
+    }
     console.error("RESTORE BANK ERROR:", err);
     res.status(500).json({ message: "Server Error" });
   }

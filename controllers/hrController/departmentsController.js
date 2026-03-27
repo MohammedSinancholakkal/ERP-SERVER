@@ -64,28 +64,21 @@ exports.addDepartment = async (req, res) => {
   const { department, description, parentDepartmentId, userId } = req.body;
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT Id AS id, Department AS name FROM Departments WHERE Department = ${department} AND IsActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-            message: "Department already exists", 
-            record: check.recordset[0]
-        });
-    }
-
-    const result = await sql.query`
+    const idResult_newId = await sql.query`
       INSERT INTO Departments (Department, Description, ParentDepartmentId, InsertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${department}, ${description}, ${parentDepartmentId || null}, ${userId})
+      VALUES (${department.trim()}, ${description}, ${parentDepartmentId || null}, ${userId});
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
+    const newId = idResult_newId.recordset[0].Id;
     await auditService.logAction(userId, 'CREATE_DEPARTMENT', `Created Department: ${department} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "Department added successfully",
         record: { id: newId, name: department }
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Department already exists" });
+    }
     console.error("ADD DEPARTMENT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -105,7 +98,7 @@ exports.updateDepartment = async (req, res) => {
     await sql.query`
       UPDATE Departments
       SET
-        Department = ${department},
+        Department = ${department.trim()},
         Description = ${description},
         ParentDepartmentId = ${parentDepartmentId || null},
         UpdateDate = GETDATE(),
@@ -116,6 +109,9 @@ exports.updateDepartment = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_DEPARTMENT', `Updated Department: ${oldName} -> ${department} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Department with this name already exists" });
+    }
     console.error("UPDATE DEPARTMENT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -129,14 +125,18 @@ exports.deleteDepartment = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Departments
       SET
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Department already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_DEPARTMENT', `Deleted Department (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department deleted successfully" });
@@ -216,32 +216,27 @@ exports.restoreDepartment = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    // --- Duplicate Check Start ---
-    const targetResult = await sql.query`SELECT Department FROM Departments WHERE Id = ${id}`;
-    if (targetResult.recordset.length > 0) {
-      const targetName = targetResult.recordset[0].Department;
-      const duplicateCheck = await sql.query`
-        SELECT Id FROM Departments 
-        WHERE Department = ${targetName} AND IsActive = 1
-      `;
-      if (duplicateCheck.recordset.length > 0) {
-        return res.status(409).json({ message: "An active department with this name already exists. Cannot restore." });
-      }
-    }
-    // --- Duplicate Check End ---
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Departments
       SET
         IsActive = 1,
         UpdateDate = GETDATE(),
-        UpdateUserId = ${userId}
-      WHERE Id = ${id}
+        UpdateUserId = ${userId},
+        DeleteDate = NULL,
+        DeleteUserId = NULL
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Department already restored or not found" });
+    }
 
     await auditService.logAction(userId, 'RESTORE_DEPARTMENT', `Restored Department (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Department restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active department with this name already exists." });
+    }
     console.error("RESTORE DEPARTMENT ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

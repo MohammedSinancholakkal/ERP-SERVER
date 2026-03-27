@@ -61,15 +61,20 @@ exports.addLanguage = async (req, res) => {
   const { languageId, languageName, userId } = req.body;
 
   try {
+    const trimmedId = languageId?.trim();
+    const trimmedName = languageName?.trim();
     await sql.query`
-      INSERT INTO Languages (LanguageId, LanguageName, InsertUserId)
-      VALUES (${languageId}, ${languageName}, ${userId})
+      INSERT INTO Languages (LanguageId, LanguageName, InsertUserId, IsActive)
+      VALUES (${trimmedId}, ${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_LANGUAGE', `Created Language: ${languageName}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_LANGUAGE', `Created Language: ${trimmedName}`, req.ip);
     res.status(200).json({ message: "Language added successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Language already exists" });
+    }
     console.error("ADD LANGUAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -83,23 +88,28 @@ exports.updateLanguage = async (req, res) => {
   const { languageId, languageName, userId } = req.body;
 
   try {
+    const trimmedId = languageId?.trim();
+    const trimmedName = languageName?.trim();
     const oldRes = await sql.query`SELECT LanguageName FROM Languages WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].LanguageName : "Unknown";
 
     await sql.query`
       UPDATE Languages
       SET 
-        LanguageId = ${languageId},
-        LanguageName = ${languageName},
+        LanguageId = ${trimmedId},
+        LanguageName = ${trimmedName},
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_LANGUAGE', `Updated Language: ${oldName} -> ${languageName} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_LANGUAGE', `Updated Language: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Language ID or Name already exists" });
+    }
     console.error("UPDATE LANGUAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -113,14 +123,18 @@ exports.deleteLanguage = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Languages
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Language already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_LANGUAGE', `Deleted Language (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language deleted successfully" });
@@ -209,19 +223,26 @@ exports.restoreLanguage = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Languages
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Language already restored or not found" });
+    }
 
     await auditService.logAction(userId, 'RESTORE_LANGUAGE', `Restored Language (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Language restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. Language ID or Name already exists." });
+    }
     console.error("RESTORE LANGUAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

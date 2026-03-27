@@ -242,7 +242,7 @@ exports.addPurchase = async (req, res) => {
     // use a fresh Request for the master insert
     const purchaseReq = new sql.Request(transaction);
 
-    const purchaseResult = await purchaseReq.query`
+    const idResult_purchaseId = await purchaseReq.query`
       INSERT INTO Purchases (
         SupplierId, InvoiceNo, PurchaseOrderNo, Date,
         Discount, TotalDiscount, ShippingCost,
@@ -252,7 +252,6 @@ exports.addPurchase = async (req, res) => {
         InsertUserId, TaxTypeId, CGSTRate, SGSTRate, IGSTRate, VehicleNo,
         InsertDate, UpdateDate
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${supplierId}, ${finalInvoiceNo || ''}, ${purchaseOrderNo || null}, ${date},
         ${safeNumbers.discount}, ${safeNumbers.totalDiscount}, ${safeNumbers.shippingCost},
@@ -261,12 +260,12 @@ exports.addPurchase = async (req, res) => {
         ${safeNumbers.totalTax}, ${noTax ? 1 : 0},
         ${userId}, ${taxTypeId || null}, ${cgstRate || 0}, ${sgstRate || 0}, ${igstRate || 0}, ${vehicleNo || null},
         ${now}, ${now}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const purchaseId = idResult_purchaseId.recordset[0].Id;
 
-    const purchaseId = purchaseResult.recordset[0].Id;
-
-    // use a NEW Request for each detail insert to avoid duplicate param names
+    // use a NEW Request for each detail insert
     for (const item of items) {
       const detailReq = new sql.Request(transaction);
       await detailReq.query`

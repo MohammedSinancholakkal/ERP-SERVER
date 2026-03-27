@@ -65,24 +65,18 @@ exports.addCustomerGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
-    // Check for duplicate
-    const checkDuplicate = await sql.query`
-      SELECT Id FROM CustomerGroups 
-      WHERE LOWER(GroupName) = LOWER(${groupName.trim()}) AND IsActive = 1
-    `;
-
-    if (checkDuplicate.recordset.length > 0) {
-      return res.status(409).json({ message: "Customer group with this name already exists" });
-    }
-
+    const name = groupName.trim();
     await sql.query`
-      INSERT INTO CustomerGroups (GroupName, Description, InsertUserId)
-      VALUES (${groupName.trim()}, ${description}, ${userId})
+      INSERT INTO CustomerGroups (GroupName, Description, InsertUserId, IsActive)
+      VALUES (${name}, ${description}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_CUSTOMER_GROUP', `Created Customer Group: ${groupName.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_CUSTOMER_GROUP', `Created Customer Group: ${name}`, req.ip);
     res.status(201).json({ message: "Customer Group added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Customer group already exists" });
+    }
     console.log("ADD CUSTOMER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -99,32 +93,26 @@ exports.updateCustomerGroup = async (req, res) => {
     return res.status(400).json({ message: "Group name is required" });
 
   try {
-    // Check for duplicate (excluding current record)
-    const checkDuplicate = await sql.query`
-      SELECT Id FROM CustomerGroups 
-      WHERE LOWER(GroupName) = LOWER(${groupName.trim()}) AND Id != ${id} AND IsActive = 1
-    `;
-
-    if (checkDuplicate.recordset.length > 0) {
-      return res.status(409).json({ message: "Customer group with this name already exists" });
-    }
-
+    const name = groupName.trim();
     const oldRes = await sql.query`SELECT GroupName FROM CustomerGroups WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].GroupName : "Unknown";
 
     await sql.query`
       UPDATE CustomerGroups
       SET 
-        GroupName = ${groupName.trim()},
+        GroupName = ${name},
         Description = ${description},
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_CUSTOMER_GROUP', `Updated Customer Group: ${oldName} -> ${groupName.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_CUSTOMER_GROUP', `Updated Customer Group: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Customer group with this name already exists" });
+    }
     console.log("UPDATE CUSTOMER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -138,14 +126,18 @@ exports.deleteCustomerGroup = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE CustomerGroups
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Customer Group already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_CUSTOMER_GROUP', `Deleted Customer Group (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group deleted successfully" });
@@ -224,26 +216,29 @@ exports.restoreCustomerGroup = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT GroupName FROM CustomerGroups WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { GroupName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM CustomerGroups WHERE LOWER(GroupName) = LOWER(${GroupName.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active group with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE CustomerGroups
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Customer Group already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT GroupName FROM CustomerGroups WHERE Id = ${id}`;
+    const GroupName = item.recordset.length > 0 ? item.recordset[0].GroupName : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_CUSTOMER_GROUP', `Restored Customer Group: ${GroupName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer Group restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active group with this name already exists." });
+    }
     console.log("RESTORE CUSTOMER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

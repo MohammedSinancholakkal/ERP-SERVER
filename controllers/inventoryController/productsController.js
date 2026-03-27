@@ -148,7 +148,7 @@ exports.addProduct = async (req, res) => {
         return res.status(400).json({ message: "Colour must be between 2 and 100 characters" });
     }
 
-    const result = await sql.query`
+    const idResult_newId = await sql.query`
       INSERT INTO Products (
         Barcode, SN, ProductName, Model, UnitPrice,
         UnitsInStock, UnitsOnOrder, ReorderLevel,
@@ -157,7 +157,6 @@ exports.addProduct = async (req, res) => {
         TaxPercentageId,
         InsertUserId
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${Barcode}, ${SN}, ${ProductName}, ${Model}, ${UnitPrice},
         ${UnitsInStock}, ${UnitsOnOrder}, ${ReorderLevel},
@@ -165,10 +164,10 @@ exports.addProduct = async (req, res) => {
         ${HSNCode}, ${Colour}, ${Grade},
         ${TaxPercentageId || null},
         ${userId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
+    const newId = idResult_newId.recordset[0].Id;
 
     await auditService.logAction(userId, 'CREATE_PRODUCT', `Created Product: ${ProductName}`, req.ip);
     res.status(200).json({ 

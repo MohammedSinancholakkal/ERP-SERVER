@@ -125,9 +125,7 @@ exports.getCustomerById = async (req, res) => {
 };
 
 
-// =============================================================
-// ADD CUSTOMER
-// =============================================================
+
 const accountingService = require("../../services/accountingService");
 
 // =============================================================
@@ -183,7 +181,7 @@ exports.addCustomer = async (req, res) => {
         userId: userId
     });
 
-    const result = await sql.query`
+    const idResult_newId = await sql.query`
       INSERT INTO Customers (
         Name, ContactName, ContactTitle,
         CountryId, StateId, CityId,
@@ -198,9 +196,8 @@ exports.addCustomer = async (req, res) => {
         IsActive,
         COAId
       )
-      OUTPUT INSERTED.Id
       VALUES (
-        ${name}, ${contactName}, ${contactTitle},
+        ${name.trim()}, ${contactName}, ${contactTitle},
         ${countryId}, ${stateId}, ${cityId},
         ${addressLine1}, ${addressLine2}, ${regionId}, ${postalCode},
         ${phone}, ${fax}, ${website},
@@ -212,10 +209,10 @@ exports.addCustomer = async (req, res) => {
         ${userId},
         1,
         ${coaId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
+    const newId = idResult_newId.recordset[0].Id;
 
     await auditService.logAction(userId, 'CREATE_CUSTOMER', `Created Customer: ${name}`, req.ip);
     res.status(200).json({ 
@@ -224,6 +221,15 @@ exports.addCustomer = async (req, res) => {
     });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        const check = await sql.query`SELECT Id FROM Customers WHERE Name = ${name.trim()} AND IsActive = 1`;
+        if (check.recordset.length > 0) {
+            return res.status(200).json({ 
+                message: "Customer already exists",
+                record: { id: check.recordset[0].Id, name, email, phone }
+            });
+        }
+    }
     console.error("ADD CUSTOMER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -261,13 +267,10 @@ exports.updateCustomer = async (req, res) => {
   } = req.body;
 
   try {
-    const oldRes = await sql.query`SELECT Name FROM Customers WHERE Id = ${id}`;
-    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
-
     await sql.query`
       UPDATE Customers
       SET
-        Name = ${name},
+        Name = ${name.trim()},
         ContactName = ${contactName},
         ContactTitle = ${contactTitle},
         CountryId = ${countryId},
@@ -293,10 +296,13 @@ exports.updateCustomer = async (req, res) => {
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_CUSTOMER', `Updated Customer: ${oldName} -> ${name} (ID: ${id})`, req.ip);
+    // Field-level changes are now logged automatically by SQL trigger trg_Audit_Customers_Update
     res.status(200).json({ message: "Customer updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Customer with this name already exists" });
+    }
     console.error("UPDATE CUSTOMER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -311,14 +317,18 @@ exports.deleteCustomer = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Customers
       SET
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Customer already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_CUSTOMER', `Deleted Customer (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Customer deleted successfully" });
@@ -486,7 +496,7 @@ exports.restoreCustomer = async (req, res) => {
 
     if (duplicateField) return res.status(409).json({ message: `Cannot restore. An active customer with this ${duplicateField} already exists.` });
 
-    await sql.query`
+    const result = await sql.query`
       UPDATE Customers
       SET
         IsActive = 1,
@@ -495,12 +505,17 @@ exports.restoreCustomer = async (req, res) => {
       WHERE Id = ${id}
     `;
 
-    const restoredName = await sql.query`SELECT Name FROM Customers WHERE Id = ${id}`;
-    const finalName = restoredName.recordset.length > 0 ? restoredName.recordset[0].Name : "Unknown";
-    await auditService.logAction(userId, 'RESTORE_CUSTOMER', `Restored Customer: ${finalName} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] > 0) {
+        const restoredName = await sql.query`SELECT Name FROM Customers WHERE Id = ${id}`;
+        const finalName = restoredName.recordset.length > 0 ? restoredName.recordset[0].Name : "Unknown";
+        await auditService.logAction(userId, 'RESTORE_CUSTOMER', `Restored Customer: ${finalName} (ID: ${id})`, req.ip);
+    }
     res.status(200).json({ message: "Customer restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active customer with this name already exists." });
+    }
     console.error("RESTORE CUSTOMER ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

@@ -64,14 +64,18 @@ exports.addMeetingType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     await sql.query`
-      INSERT INTO MeetingTypes (Name, InsertUserId)
-      VALUES (${name.trim()}, ${userId})
+      INSERT INTO MeetingTypes (Name, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
-    await auditService.logAction(userId, 'CREATE_MEETING_TYPE', `Created Meeting Type: ${name.trim()}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_MEETING_TYPE', `Created Meeting Type: ${trimmedName}`, req.ip);
     res.status(201).json({ message: "Meeting type added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Meeting type already exists" });
+    }
     console.log("ADD MEETING TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -88,20 +92,24 @@ exports.updateMeetingType = async (req, res) => {
     return res.status(400).json({ message: "Name is required" });
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM MeetingTypes WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE MeetingTypes
-      SET Name = ${name.trim()},
+      SET Name = ${trimmedName},
           UpdateUserId = ${userId},
           UpdateDate = GETDATE()
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_MEETING_TYPE', `Updated Meeting Type: ${oldName} -> ${name.trim()} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_MEETING_TYPE', `Updated Meeting Type: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting type updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Meeting type name already exists" });
+    }
     console.log("UPDATE MEETING TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -115,13 +123,17 @@ exports.deleteMeetingType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE MeetingTypes
       SET IsActive = 0,
           DeleteUserId = ${userId},
           DeleteDate = GETDATE()
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Meeting type already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_MEETING_TYPE', `Deleted Meeting Type (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Meeting type deleted successfully" });
@@ -168,14 +180,7 @@ exports.restoreMeetingType = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM MeetingTypes WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT Id FROM MeetingTypes WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active meeting type with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE MeetingTypes
       SET 
         IsActive = 1,
@@ -183,13 +188,19 @@ exports.restoreMeetingType = async (req, res) => {
         UpdateDate = GETDATE(),
         DeleteUserId = NULL,
         DeleteDate = NULL
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_MEETING_TYPE', `Restored Meeting Type: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Meeting type already restored or not found" });
+    }
+
     res.status(200).json({ message: "Meeting type restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active meeting type with this name already exists." });
+    }
     console.log("RESTORE MEETING TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

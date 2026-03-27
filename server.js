@@ -60,6 +60,7 @@ const userRolesRoutes = require("./routes/userRolesRoutes");
 const rolePermissionsRoutes = require("./routes/rolePermissionsRoutes");
 const permissionRoutes = require("./routes/permissionRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const auditRoutes = require("./routes/auditRoutes");
 
 
 
@@ -233,6 +234,7 @@ ERP_SERVER.use("/api/users", require("./routes/userPermissionsRoutes"));
 ERP_SERVER.use("/api", rolePermissionsRoutes);
 ERP_SERVER.use("/api/permissions", permissionRoutes);
 ERP_SERVER.use("/api/dashboard", dashboardRoutes);
+ERP_SERVER.use("/api/audit-logs", auditRoutes);
 // 🟢 FINANCIAL ROUTES
 ERP_SERVER.use("/api/chart-of-accounts", require("./routes/chartOfAccountsRoutes"));
 ERP_SERVER.use("/api/expense-transactions", require("./routes/expenseTransactionRoutes"));

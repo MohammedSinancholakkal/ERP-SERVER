@@ -1,157 +1,3 @@
-// const sql = require("../db/dbConfig");
-
-// // =============================================================
-// // GET ALL COUNTRIES (For dropdown)
-// // =============================================================
-// exports.getAllCountries = async (req, res) => {
-//   try {
-//     const result = await sql.query`
-//       SELECT id, name FROM Countries WHERE isActive = 1
-//     `;
-//     res.status(200).json(result.recordset);
-//   } catch (error) {
-//     res.status(500).json({ message: "Error loading countries" });
-//   }
-// };
-
-// // =============================================================
-// // GET ALL STATES
-// // =============================================================
-// exports.getAllStates = async (req, res) => {
-//   try {
-//     let page = parseInt(req.query.page) || 1;
-//     let limit = parseInt(req.query.limit) || 25;
-//     let offset = (page - 1) * limit;
-
-//     const totalResult = await sql.query`
-//       SELECT COUNT(*) AS Total
-//       FROM States
-//       WHERE isActive = 1
-//     `;
- 
-//     const result = await sql.query`
-//       SELECT id, name, countryId
-//       FROM States
-//       WHERE isActive = 1
-//       ORDER BY id DESC
-//       OFFSET ${offset} ROWS
-//       FETCH NEXT ${limit} ROWS ONLY
-//     `;
-
-//     res.status(200).json({
-//       total: totalResult.recordset[0].Total,
-//       records: result.recordset,
-//     });
-  
-//   } catch (error) {
-//     res.status(500).json({ message: "Error loading states" });
-//   }
-// };
-
-
-
-
-
-// // =============================================================
-// // ADD STATE
-// // =============================================================
-// exports.addState = async (req, res) => {
-//   const { name, countryId, userId } = req.body;
-
-//   if (!name || !countryId) {
-//     return res.status(400).json({ message: "Missing fields" });
-//   }
-
-//   try {
-//     await sql.query`
-//       INSERT INTO States (name, countryId, insertUserId)
-//       VALUES (${name}, ${countryId}, ${userId})
-//     `;
-//     res.status(200).json({ message: "State added successfully" });
-//   } catch (error) {
-//     res.status(500).json({ message: "Error adding state" });
-//   }
-// };
-
-// // =============================================================
-// // UPDATE STATE
-// // =============================================================
-// exports.updateState = async (req, res) => {
-//   const { id } = req.params;
-//   const { name, countryId, userId } = req.body;
-
-//   try {
-//     await sql.query`
-//       UPDATE States
-//       SET 
-//         name = ${name},
-//         countryId = ${countryId},
-//         updateDate = GETDATE(),
-//         updateUserId = ${userId}
-//       WHERE id = ${id}
-//     `;
-//     res.status(200).json({ message: "State updated" });
-//   } catch (error) {
-//     res.status(500).json({ message: "Error updating state" });
-//   }
-// };
-
-// // =============================================================
-// // DELETE STATE (Soft delete)
-// // =============================================================
-// exports.deleteState = async (req, res) => {
-//   const { id } = req.params;
-//   const { userId } = req.body;
-
-//   try {
-//     await sql.query`
-//       UPDATE States
-//       SET 
-//         isActive = 0,
-//         deleteDate = GETDATE(),
-//         deleteUserId = ${userId}
-//       WHERE id = ${id}
-//     `;
-//     res.status(200).json({ message: "State deleted" });
-//   } catch (error) {
-//     res.status(500).json({ message: "Error deleting state" });
-//   }
-// };
-
-
-
-// // =============================================================
-// // SEARCH STATES
-// // =============================================================
-// exports.searchStates = async (req, res) => {
-//   const { q } = req.query;
-
-//   try {
-//     const result = await sql.query`
-//       SELECT 
-//         s.id,
-//         s.name,
-//         s.countryId,
-//         c.name AS countryName
-//       FROM States s
-//       INNER JOIN Countries c ON s.countryId = c.id
-//       WHERE 
-//         s.isActive = 1 AND
-//         (s.name LIKE '%' + ${q} + '%' OR c.name LIKE '%' + ${q} + '%')
-//       ORDER BY s.id DESC
-//     `;
-
-//     res.status(200).json(result.recordset);
-//   } catch (error) {
-//     console.log("SEARCH STATES ERROR:", error);
-//     res.status(500).json({ message: "Error searching states" });
-//   }
-// };
-
-
-
-
-
 const sql = require("../db/dbConfig");
 const auditService = require("../services/auditService");
 
@@ -164,7 +10,6 @@ exports.getAllStates = async (req, res) => {
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    // total count
     const totalCount = await sql.query`
       SELECT COUNT(*) AS Total
       FROM States
@@ -177,7 +22,6 @@ exports.getAllStates = async (req, res) => {
     const allowedSort = ["id", "name", "countryName"];
     const sortColumn = allowedSort.includes(sortBy) ? (sortBy === "countryName" ? "c.name" : `s.${sortBy}`) : "s.id";
 
-    // paginated list
     const query = `
       SELECT 
         s.id,
@@ -239,28 +83,22 @@ exports.addState = async (req, res) => {
   }
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT id, name, countryId FROM States WHERE name = ${name} AND countryId = ${countryId} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-          message: "State already exists", 
-          record: check.recordset[0] 
-        });
-    }
-
-    const result = await sql.query`
-      INSERT INTO States (name, countryId, insertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${name}, ${countryId}, ${userId})
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO States (name, countryId, insertUserId, isActive)
+      VALUES (${trimmedName}, ${countryId}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const newId = result.recordset[0].Id;
-    await auditService.logAction(userId, 'CREATE_STATE', `Created State: ${name} (ID: ${newId})`, req.ip);
+    const newId = idResult_newId.recordset[0].Id;
+    await auditService.logAction(userId, 'CREATE_STATE', `Created State: ${trimmedName} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "State added successfully",
-        record: { id: newId, name, countryId } 
+        record: { id: newId, name: trimmedName, countryId } 
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "State already exists" });
+    }
     console.error("ADD STATE ERROR:", error);
     res.status(500).json({ message: "Error adding state" });
   }
@@ -274,12 +112,6 @@ exports.updateState = async (req, res) => {
   const { name, countryId, userId } = req.body;
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT id FROM States WHERE name = ${name} AND countryId = ${countryId} AND id != ${id} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(409).json({ message: "State with this name already exists in the selected country" });
-    }
-
     const oldRes = await sql.query`SELECT name FROM States WHERE id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
 
@@ -295,6 +127,10 @@ exports.updateState = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_STATE', `Updated State: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State updated" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "State with this name already exists in the selected country" });
+    }
+    console.error("UPDATE STATE ERROR:", error);
     res.status(500).json({ message: "Error updating state" });
   }
 };
@@ -307,17 +143,23 @@ exports.deleteState = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE States
       SET 
         isActive = 0,
         deleteDate = GETDATE(),
         deleteUserId = ${userId}
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 1
     `;
+    
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "State already deleted" });
+    }
+
     await auditService.logAction(userId, 'DELETE_STATE', `Deleted State (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State deleted" });
   } catch (error) {
+    console.error("DELETE STATE ERROR:", error);
     res.status(500).json({ message: "Error deleting state" });
   }
 };
@@ -349,22 +191,13 @@ exports.searchStates = async (req, res) => {
   }
 };
 
-
-
-
 // =============================================================
 // GET INACTIVE STATES (soft-deleted)
 // =============================================================
 exports.getInactiveStates = async (req, res) => {
   try {
     const result = await sql.query`
-      SELECT
-        id,
-        name,
-        countryId,
-        isActive,
-        deleteDate,
-        deleteUserId
+      SELECT id, name, countryId, isActive, deleteDate, deleteUserId
       FROM States
       WHERE isActive = 0
       ORDER BY deleteDate DESC
@@ -384,33 +217,23 @@ exports.restoreState = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
   try {
-    // 1. Get the name and countryId of the state being restored
-    const stateToRestore = await sql.query`SELECT name, countryId FROM States WHERE id = ${id}`;
-    if (stateToRestore.recordset.length === 0) {
-      return res.status(404).json({ message: "State not found" });
-    }
-    const { name: stateName, countryId } = stateToRestore.recordset[0];
-
-    // 2. Check if an active state with this name and country already exists
-    const checkDuplicate = await sql.query`SELECT id FROM States WHERE name = ${stateName} AND countryId = ${countryId} AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) {
-      return res.status(409).json({ message: "Cannot restore. An active state with this name already exists in the selected country." });
-    }
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE States
-      SET
-        isActive = 1,
-        updateDate = GETDATE(),
-        updateUserId = ${userId}
-      WHERE id = ${id}
+      SET isActive = 1, updateDate = GETDATE(), updateUserId = ${userId}
+      WHERE id = ${id} AND isActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "State already restored or not found" });
+    }
+
     await auditService.logAction(userId, 'RESTORE_STATE', `Restored State (ID: ${id})`, req.ip);
     res.status(200).json({ message: "State restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+      return res.status(409).json({ message: "Cannot restore. An active state with this name already exists in the selected country." });
+    }
     console.error("RESTORE STATE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
-
-

@@ -60,28 +60,22 @@ exports.addRegion = async (req, res) => {
     return res.status(400).json({ message: "Region name is required" });
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT regionId AS id, regionName AS name FROM Regions WHERE regionName = ${regionName} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-            message: "Region already exists", 
-            record: check.recordset[0]
-        });
-    }
-
+    const trimmedName = regionName.trim();
     const result = await sql.query`
-      INSERT INTO Regions (regionName, insertUserId)
-      OUTPUT INSERTED.regionId AS id
-      VALUES (${regionName}, ${userId})
+      INSERT INTO Regions (regionName, insertUserId, isActive)
+      VALUES (${trimmedName}, ${userId}, 1)
     `;
 
     const newId = result.recordset[0].id;
-    await auditService.logAction(userId, 'CREATE_REGION', `Created Region: ${regionName} (ID: ${newId})`, req.ip);
+    await auditService.logAction(userId, 'CREATE_REGION', `Created Region: ${trimmedName} (ID: ${newId})`, req.ip);
     res.status(201).json({ 
         message: "Region added successfully",
-        record: { id: newId, name: regionName }
+        record: { id: newId, name: trimmedName }
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Region already exists" });
+    }
     console.log("ADD REGION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -104,7 +98,7 @@ exports.updateRegion = async (req, res) => {
     await sql.query`
       UPDATE Regions
       SET 
-        regionName = ${regionName},
+        regionName = ${regionName.trim()},
         updateUserId = ${userId},
         updateDate = GETDATE()
       WHERE regionId = ${id}
@@ -113,6 +107,9 @@ exports.updateRegion = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_REGION', `Updated Region: ${oldName} -> ${regionName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Region with this name already exists" });
+    }
     console.log("UPDATE REGION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }
@@ -126,14 +123,18 @@ exports.deleteRegion = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Regions
       SET 
         isActive = 0,
         updateUserId = ${userId},
         updateDate = GETDATE()
-      WHERE regionId = ${id}
+      WHERE regionId = ${id} AND isActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Region already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_REGION', `Deleted Region (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region deleted successfully" });
@@ -241,25 +242,28 @@ exports.restoreRegion = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT regionName FROM Regions WHERE regionId = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { regionName } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT regionId FROM Regions WHERE LOWER(regionName) = LOWER(${regionName.trim()}) AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active region with this name already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Regions
       SET 
         isActive = 1,
         updateUserId = ${userId},
         updateDate = GETDATE()
-      WHERE regionId = ${id}
+      WHERE regionId = ${id} AND isActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Region already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT regionName FROM Regions WHERE regionId = ${id}`;
+    const regionName = item.recordset.length > 0 ? item.recordset[0].regionName : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_REGION', `Restored Region: ${regionName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Region restored successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active region with this name already exists." });
+    }
     console.log("RESTORE REGION ERROR:", error);
     res.status(500).json({ message: "Server Error" });
   }

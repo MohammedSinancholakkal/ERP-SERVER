@@ -141,28 +141,27 @@ exports.addPayroll = async (req, res) => {
 
     // -------- PAYROLL MASTER
     const payrollReq = new sql.Request(transaction);
-    const payrollResult = await payrollReq.query`
+    const idResult_payrollId = await payrollReq.query`
       INSERT INTO Payroll (
         Number, Description, PaymentDate, CashBankId,
         TotalBasicSalary, TotalIncome, TotalDeduction,
         TotalTakeHomePay, TotalPaymentAmount,
         CurrencyName, InsertUserId
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${number}, ${description}, ${paymentDate}, ${cashBankId},
         ${totalBasicSalary}, ${totalIncome}, ${totalDeduction},
         ${totalTakeHomePay}, ${totalPaymentAmount},
         ${currencyName}, ${userId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const payrollId = payrollResult.recordset[0].Id;
+    const payrollId = idResult_payrollId.recordset[0].Id;
 
     // -------- PAYROLL DETAILS (EMPLOYEES)
     for (const emp of employees) {
       const detailReq = new sql.Request(transaction);
-      const detailResult = await detailReq.query`
+      const idResult_payrollDetailId = await detailReq.query`
         INSERT INTO PayrollDetail (
           PayrollId, EmployeeId,
           BankAccount, BankId,
@@ -177,7 +176,6 @@ exports.addPayroll = async (req, res) => {
           FixedMonthlyBasic,
           InsertUserId
         )
-        OUTPUT INSERTED.Id
         VALUES (
           ${payrollId}, ${emp.employeeId},
           ${emp.bankAccount}, ${emp.bankId},
@@ -191,15 +189,14 @@ exports.addPayroll = async (req, res) => {
           ${emp.salaryPaymentStatus || 'Pending'},
           ${emp.fixedMonthlyBasic || 0},
           ${userId}
-        )
+        );
+        SELECT SCOPE_IDENTITY() AS Id;
       `;
-
-      const payrollDetailId = detailResult.recordset[0].Id;
+      const payrollDetailId = idResult_payrollDetailId.recordset[0].Id;
 
       // -------- CREATE TRANSACTION IF PAID
       if (emp.salaryPaymentStatus === 'Paid') {
           try {
-              // 1. Get Salaries & Wages Head
               const headRes = await transaction.request().query("SELECT Id FROM Accounts WHERE HeadCode = '408'");
               const salaryHeadId = headRes.recordset[0]?.Id;
 
@@ -358,8 +355,8 @@ exports.updatePayroll = async (req, res) => {
     // 3. Re-insert new details
     for (const emp of employees) {
       const detailReq = new sql.Request(transaction);
-      const detailResult = await detailReq.query`
-        INSERT INTO PayrollDetail (
+      const idResult_payrollDetailId = await detailReq.query`
+        INSERT INTO PayrollDetails (
           PayrollId, EmployeeId,
           BankAccount, BankId,
           BasicSalary, TotalIncome,
@@ -373,7 +370,6 @@ exports.updatePayroll = async (req, res) => {
           FixedMonthlyBasic,
           InsertUserId
         )
-        OUTPUT INSERTED.Id
         VALUES (
           ${id}, ${emp.employeeId},
           ${emp.bankAccount}, ${emp.bankId},
@@ -387,10 +383,10 @@ exports.updatePayroll = async (req, res) => {
           ${emp.salaryPaymentStatus || 'Pending'},
           ${emp.fixedMonthlyBasic || 0},
           ${userId}
-        )
+        );
+        SELECT SCOPE_IDENTITY() AS Id;
       `;
-
-      const payrollDetailId = detailResult.recordset[0].Id;
+      const payrollDetailId = idResult_payrollDetailId.recordset[0].Id;
 
       // -------- CREATE TRANSACTION IF PAID
       if (emp.salaryPaymentStatus === 'Paid') {

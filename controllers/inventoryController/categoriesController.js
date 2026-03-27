@@ -57,28 +57,27 @@ exports.getAllCategories = async (req, res) => {
 };
 
 
-// =============================================================
-// ADD CATEGORY
-// =============================================================
 exports.addCategory = async (req, res) => {
   const { name, description, parentCategoryId, userId } = req.body;
 
   try {
-    const result = await sql.query`
-      INSERT INTO Categories (Name, Description, ParentCategoryId, InsertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${name}, ${description}, ${parentCategoryId || null}, ${userId})
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO Categories (Name, Description, ParentCategoryId, InsertUserId, IsActive)
+      VALUES (${trimmedName}, ${description}, ${parentCategoryId || null}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const newId = idResult_newId.recordset[0].Id;
 
-    const newId = result.recordset[0].Id;
-
-    await auditService.logAction(userId, 'CREATE_CATEGORY', `Created Category: ${name}`, req.ip);
+    await auditService.logAction(userId, 'CREATE_CATEGORY', `Created Category: ${trimmedName}`, req.ip);
     res.status(200).json({ 
         message: "Category added successfully",
-        record: { id: newId, name, description, parentCategoryId }
+        record: { id: newId, name: trimmedName, description, parentCategoryId }
     });
-
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Category already exists" });
+    }
     console.error("ADD CATEGORY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -93,13 +92,14 @@ exports.updateCategory = async (req, res) => {
   const { name, description, parentCategoryId, userId } = req.body;
 
   try {
+    const trimmedName = name.trim();
     const oldRes = await sql.query`SELECT Name FROM Categories WHERE Id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].Name : "Unknown";
 
     await sql.query`
       UPDATE Categories 
       SET 
-        Name = ${name},
+        Name = ${trimmedName},
         Description = ${description},
         ParentCategoryId = ${parentCategoryId || null},
         UpdateDate = GETDATE(),
@@ -107,10 +107,13 @@ exports.updateCategory = async (req, res) => {
       WHERE Id = ${id}
     `;
 
-    await auditService.logAction(userId, 'UPDATE_CATEGORY', `Updated Category: ${oldName} -> ${name} (ID: ${id})`, req.ip);
+    await auditService.logAction(userId, 'UPDATE_CATEGORY', `Updated Category: ${oldName} -> ${trimmedName} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Category with this name already exists" });
+    }
     console.error("UPDATE CATEGORY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -125,18 +128,21 @@ exports.deleteCategory = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE Categories 
       SET 
         IsActive = 0,
         DeleteDate = GETDATE(),
         DeleteUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Category already deleted" });
+    }
 
     await auditService.logAction(userId, 'DELETE_CATEGORY', `Deleted Category (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category deleted successfully" });
-
   } catch (error) {
     console.error("DELETE CATEGORY ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -218,28 +224,29 @@ exports.restoreCategory = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT Name FROM Categories WHERE Id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { Name } = itemToRestore.recordset[0];
-
-    const checkName = await sql.query`SELECT Id FROM Categories WHERE LOWER(Name) = LOWER(${Name.trim()}) AND IsActive = 1`;
-    if (checkName.recordset.length > 0) {
-        return res.status(409).json({ message: "Cannot restore. An active category with this name already exists." });
-    }
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Categories
       SET 
         IsActive = 1,
         UpdateDate = GETDATE(),
         UpdateUserId = ${userId}
-      WHERE Id = ${id}
+      WHERE Id = ${id} AND IsActive = 0
     `;
 
-    await auditService.logAction(userId, 'RESTORE_CATEGORY', `Restored Category: ${Name} (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Category already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT Name FROM Categories WHERE Id = ${id}`;
+    const name = item.recordset.length > 0 ? item.recordset[0].Name : "Unknown";
+
+    await auditService.logAction(userId, 'RESTORE_CATEGORY', `Restored Category: ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Category restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active category with this name already exists." });
+    }
     console.error("RESTORE CATEGORY ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

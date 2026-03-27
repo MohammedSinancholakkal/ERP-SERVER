@@ -1,5 +1,3 @@
-
-
 const sql = require("../db/dbConfig");
 const auditService = require("../services/auditService");
 
@@ -8,12 +6,10 @@ const auditService = require("../services/auditService");
 // =============================================================
 exports.getAllCities = async (req, res) => {
   try {
-    // pagination inputs
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    // get total count
     const totalResult = await sql.query`
       SELECT COUNT(*) AS Total
       FROM Cities
@@ -23,22 +19,14 @@ exports.getAllCities = async (req, res) => {
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
 
-
     let sortColumn = "c.id";
     if (sortBy === "name") sortColumn = "c.name";
     else if (sortBy === "countryName") sortColumn = "co.name";
     else if (sortBy === "stateName") sortColumn = "s.name";
     else if (sortBy === "id") sortColumn = "c.id";
 
-    // get paginated records
     const query = `
-      SELECT 
-        c.id,
-        c.name,
-        c.countryId,
-        c.stateId,
-        co.name AS countryName,
-        s.name AS stateName
+      SELECT c.id, c.name, c.countryId, c.stateId, co.name AS countryName, s.name AS stateName
       FROM Cities c
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
@@ -54,7 +42,6 @@ exports.getAllCities = async (req, res) => {
 
     const result = await request.query(query);
 
-    // respond
     res.status(200).json({
       total: totalResult.recordset[0].Total,
       records: result.recordset,
@@ -78,44 +65,31 @@ exports.addCity = async (req, res) => {
   }
 
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT id, name, countryId, stateId FROM Cities WHERE name = ${name} AND stateId = ${stateId} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(200).json({ 
-            message: "City already exists",
-            record: check.recordset[0]
-        });
-    }
-
-    const result = await sql.query`
-      INSERT INTO Cities (name, countryId, stateId, insertUserId)
-      OUTPUT INSERTED.Id
-      VALUES (${name}, ${countryId}, ${stateId}, ${userId})
+    const trimmedName = name.trim();
+    const idResult_newId = await sql.query`
+      INSERT INTO Cities (name, countryId, stateId, insertUserId, isActive)
+      VALUES (${trimmedName}, ${countryId}, ${stateId}, ${userId}, 1);
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
+    const newId = idResult_newId.recordset[0].Id;
 
-    const newId = result.recordset[0].Id;
-
-    // Fetch the full record with names
     const fullRecord = await sql.query`
-      SELECT 
-        c.id,
-        c.name,
-        c.countryId,
-        c.stateId,
-        co.name AS countryName,
-        s.name AS stateName
+      SELECT c.id, c.name, c.countryId, c.stateId, co.name AS countryName, s.name AS stateName
       FROM Cities c
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
       WHERE c.id = ${newId}
     `;
 
-    await auditService.logAction(userId, 'CREATE_CITY', `Created City: ${name} (ID: ${newId})`, req.ip);
+    await auditService.logAction(userId, 'CREATE_CITY', `Created City: ${trimmedName} (ID: ${newId})`, req.ip);
     res.status(200).json({ 
         message: "City added successfully",
         record: fullRecord.recordset[0]
     });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "City already exists" });
+    }
     console.error("ADD CITY ERROR:", error);
     res.status(500).json({ message: "Error adding city" });
   }
@@ -127,55 +101,40 @@ exports.addCity = async (req, res) => {
 exports.updateCity = async (req, res) => {
   const { id } = req.params;
   const { name, countryId, stateId, userId } = req.body;
-
   try {
-    // Check duplicate
-    const check = await sql.query`SELECT id FROM Cities WHERE name = ${name} AND stateId = ${stateId} AND id != ${id} AND isActive = 1`;
-    if (check.recordset.length > 0) {
-        return res.status(409).json({ message: "City with this name already exists in the selected state" });
-    }
-
     const oldRes = await sql.query`SELECT name FROM Cities WHERE id = ${id}`;
     const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].name : "Unknown";
-
     await sql.query`  
-      UPDATE Cities
-      SET 
-        name = ${name},
-        countryId = ${countryId},
-        stateId = ${stateId},
-        updateDate = GETDATE(),
-        updateUserId = ${userId}
+      UPDATE Cities SET name = ${name}, countryId = ${countryId}, stateId = ${stateId}, updateDate = GETDATE(), updateUserId = ${userId}
       WHERE id = ${id}
     `;
     await auditService.logAction(userId, 'UPDATE_CITY', `Updated City: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "City updated" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "City with this name already exists in the selected state" });
+    }
+    console.error("UPDATE CITY ERROR:", error);
     res.status(500).json({ message: "Error updating city" });
   }
 };
 
-
-
+// =============================================================
 // DELETE CITY
-
-
+// =============================================================
 exports.deleteCity = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
-
   try {
-    await sql.query`
-      UPDATE Cities
-      SET 
-        isActive = 0,
-        deleteDate = GETDATE(),
-        deleteUserId = ${userId}
-      WHERE id = ${id}
+    const result = await sql.query`
+      UPDATE Cities SET isActive = 0, deleteDate = GETDATE(), deleteUserId = ${userId}
+      WHERE id = ${id} AND isActive = 1
     `;
+    if (result.rowsAffected[0] === 0) return res.status(200).json({ message: "City already deleted" });
     await auditService.logAction(userId, 'DELETE_CITY', `Deleted City (ID: ${id})`, req.ip);
     res.status(200).json({ message: "City deleted" });
   } catch (error) {
+    console.error("DELETE CITY ERROR:", error);
     res.status(500).json({ message: "Error deleting city" });
   }
 };
@@ -185,36 +144,19 @@ exports.deleteCity = async (req, res) => {
 // =============================================================
 exports.searchCities = async (req, res) => {
   const { q } = req.query;
-
   try {
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
-
-
     let sortColumn = "c.id";
     if (sortBy === "name") sortColumn = "c.name";
     else if (sortBy === "countryName") sortColumn = "co.name";
     else if (sortBy === "stateName") sortColumn = "s.name";
-    else if (sortBy === "id") sortColumn = "c.id";
-
     const query = `
-      SELECT 
-        c.id,
-        c.name,
-        c.countryId,
-        c.stateId,
-        co.name AS countryName,
-        s.name AS stateName
+      SELECT c.id, c.name, c.countryId, c.stateId, co.name AS countryName, s.name AS stateName
       FROM Cities c
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
-      WHERE 
-        c.isActive = 1 AND
-        (
-          c.name LIKE '%${q}%' OR 
-          co.name LIKE '%${q}%' OR 
-          s.name LIKE '%${q}%'
-        )
+      WHERE c.isActive = 1 AND (c.name LIKE '%${q}%' OR co.name LIKE '%${q}%' OR s.name LIKE '%${q}%')
       ORDER BY ${sortColumn} ${order}
     `;
     const result = await sql.query(query);
@@ -224,108 +166,47 @@ exports.searchCities = async (req, res) => {
   }
 };
 
-
 // =============================================================
-// GET STATES BY COUNTRY  (needed for dropdown)
+// DROPDOWNS
 // =============================================================
-// server: controllers/cityController.js (inside getStatesByCountry)
 exports.getStatesByCountry = async (req, res) => {
   const { countryId } = req.params;
-  console.log('getStatesByCountry called with countryId=', countryId);
   try {
-    const result = await sql.query`
-      SELECT id, name, countryId
-      FROM States
-      WHERE isActive = 1 AND countryId = ${countryId}
-      ORDER BY name ASC
-    `;
-    console.log('states result count=', result.recordset.length);
+    const result = await sql.query`SELECT id, name, countryId FROM States WHERE isActive = 1 AND countryId = ${countryId} ORDER BY name ASC`;
     res.status(200).json(result.recordset);
-  } catch (error) {
-    console.error('getStatesByCountry ERROR', error);
-    res.status(500).json({ message: "Error loading states" });
-  }
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
- 
-// =============================================================
-// GET ALL COUNTRIES (needed for dropdown)
-// =============================================================
 exports.getAllCountries = async (req, res) => {
   try {
-    const result = await sql.query`
-      SELECT id, name 
-      FROM Countries
-      WHERE isActive = 1
-      ORDER BY name ASC
-    `;
+    const result = await sql.query`SELECT id, name FROM Countries WHERE isActive = 1 ORDER BY name ASC`;
     res.status(200).json(result.recordset);
-  } catch (error) {
-    res.status(500).json({ message: "Error loading countries" });
-  }
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-
-
-
-
-// GET INACTIVE CITIES
+// =============================================================
+// INACTIVE & RESTORE
+// =============================================================
 exports.getInactiveCities = async (req, res) => {
   try {
     const result = await sql.query`
-      SELECT
-        c.id,
-        c.name,
-        c.countryId,
-        c.stateId,
-        co.name AS countryName,
-        s.name AS stateName,
-        c.isActive,
-        c.deleteDate,
-        c.deleteUserId
+      SELECT c.*, co.name AS countryName, s.name AS stateName
       FROM Cities c
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
-      WHERE c.isActive = 0
-      ORDER BY c.deleteDate DESC
+      WHERE c.isActive = 0 ORDER BY c.deleteDate DESC
     `;
     res.status(200).json({ records: result.recordset });
-  } catch (error) {
-    console.error("GET INACTIVE CITIES ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
-// RESTORE CITY
 exports.restoreCity = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
   try {
-    // 1. Get the name and stateId of the city being restored
-    const cityToRestore = await sql.query`SELECT name, stateId FROM Cities WHERE id = ${id}`;
-    if (cityToRestore.recordset.length === 0) {
-        return res.status(404).json({ message: "City not found" });
-    }
-    const { name: cityName, stateId } = cityToRestore.recordset[0];
-
-    // 2. Check if an active city with this name and state already exists
-    const checkDuplicate = await sql.query`SELECT id FROM Cities WHERE name = ${cityName} AND stateId = ${stateId} AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) {
-        return res.status(409).json({ message: "Cannot restore. An active city with this name already exists in the selected state." });
-    }
-
-    await sql.query`
-      UPDATE Cities
-      SET
-        isActive = 1,
-        updateDate = GETDATE(),
-        updateUserId = ${userId}
-      WHERE id = ${id}
-    `;
+    const result = await sql.query`UPDATE Cities SET isActive = 1, updateDate = GETDATE(), updateUserId = ${userId} WHERE id = ${id} AND isActive = 0`;
+    if (result.rowsAffected[0] === 0) return res.status(200).json({ message: "Not found" });
     await auditService.logAction(userId, 'RESTORE_CITY', `Restored City (ID: ${id})`, req.ip);
-    res.status(200).json({ message: "City restored successfully" });
-  } catch (error) {
-    console.error("RESTORE CITY ERROR:", error);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.status(200).json({ message: "City restored" });
+  } catch (error) { res.status(500).json({ message: "Error" }); }
 };

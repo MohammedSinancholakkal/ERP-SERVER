@@ -268,7 +268,6 @@ exports.addSale = async (req, res) => {
         TaxTypeId, CGSTRate, SGSTRate, IGSTRate, InvoiceNo,
         InsertDate
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${customerId}, ${date},
         ${discount}, ${totalDiscount},

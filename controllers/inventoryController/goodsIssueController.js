@@ -144,7 +144,7 @@ exports.addGoodsIssue = async (req, res) => {
 
     const masterReq = new sql.Request(transaction);
 
-    const issueResult = await masterReq.query`
+    const idResult_goodsIssueId = await masterReq.query`
       INSERT INTO GoodsIssue (
         SaleId,
         CustomerId,
@@ -156,7 +156,6 @@ exports.addGoodsIssue = async (req, res) => {
         Reference,
         InsertUserId
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${saleId},
         ${customerId},
@@ -167,10 +166,10 @@ exports.addGoodsIssue = async (req, res) => {
         ${journalRemarks},
         ${reference},
         ${userId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const goodsIssueId = issueResult.recordset[0].Id;
+    const goodsIssueId = idResult_goodsIssueId.recordset[0].Id;
 
     for (const item of items) {
       await new sql.Request(transaction).query`

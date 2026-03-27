@@ -55,12 +55,15 @@ exports.addTaxPercentage = async (req, res) => {
 
   try {
     await sql.query`
-      INSERT INTO TaxPercentages (percentage, insertUserId)
-      VALUES (${percentage}, ${userId})
+      INSERT INTO TaxPercentages (percentage, insertUserId, isActive)
+      VALUES (${percentage}, ${userId}, 1)
     `;
     await auditService.logAction(userId, 'CREATE_TAXPERCENTAGE', `Created Tax Percentage: ${percentage}%`, req.ip);
     res.status(200).json({ message: "Tax Percentage added successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(200).json({ message: "Tax Percentage already exists" });
+    }
     console.error("ADD TAX PERCENTAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -88,6 +91,9 @@ exports.updateTaxPercentage = async (req, res) => {
     await auditService.logAction(userId, 'UPDATE_TAXPERCENTAGE', `Updated Tax Percentage: ${oldPct}% -> ${percentage}% (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage updated successfully" });
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Tax Percentage already exists" });
+    }
     console.error("UPDATE TAX PERCENTAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -101,14 +107,19 @@ exports.deleteTaxPercentage = async (req, res) => {
   const { userId } = req.body;
   
   try {
-    await sql.query`
+    const result = await sql.query`
       UPDATE TaxPercentages 
       SET 
         isActive = 0,
         deleteDate = GETDATE(),
         deleteUserId = ${userId}
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 1
     `;
+
+    if (result.rowsAffected[0] === 0) {
+        return res.status(200).json({ message: "Tax Percentage already deleted" });
+    }
+
     await auditService.logAction(userId, 'DELETE_TAXPERCENTAGE', `Deleted Tax Percentage (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage deleted successfully" });
   } catch (error) {
@@ -183,26 +194,29 @@ exports.restoreTaxPercentage = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const itemToRestore = await sql.query`SELECT percentage FROM TaxPercentages WHERE id = ${id}`;
-    if (itemToRestore.recordset.length === 0) return res.status(404).json({ message: "Not found" });
-    const { percentage } = itemToRestore.recordset[0];
-
-    const checkDuplicate = await sql.query`SELECT id FROM TaxPercentages WHERE percentage = ${percentage} AND isActive = 1`;
-    if (checkDuplicate.recordset.length > 0) return res.status(409).json({ message: "Cannot restore. An active tax percentage with this value already exists." });
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE TaxPercentages
       SET 
         isActive = 1,
         updateDate = GETDATE(),
         updateUserId = ${userId}
-      WHERE id = ${id}
+      WHERE id = ${id} AND isActive = 0
     `;
+
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Tax Percentage already restored or not found" });
+    }
+
+    const item = await sql.query`SELECT percentage FROM TaxPercentages WHERE id = ${id}`;
+    const percentage = item.recordset.length > 0 ? item.recordset[0].percentage : "Unknown";
 
     await auditService.logAction(userId, 'RESTORE_TAXPERCENTAGE', `Restored Tax Percentage: ${percentage}% (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Tax Percentage restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. Tax percentage already exists." });
+    }
     console.error("RESTORE TAX PERCENTAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

@@ -132,7 +132,7 @@ exports.addGoodsReceipt = async (req, res) => {
     // ---- MASTER INSERT
     const masterReq = new sql.Request(transaction);
 
-    const receiptResult = await masterReq.query`
+    const idResult_goodsReceiptId = await masterReq.query`
       INSERT INTO GoodsReceipt (
         SupplierId,
         PurchaseId,
@@ -144,7 +144,6 @@ exports.addGoodsReceipt = async (req, res) => {
         Reference,
         InsertUserId
       )
-      OUTPUT INSERTED.Id
       VALUES (
         ${supplierId},
         ${purchaseId},
@@ -155,10 +154,10 @@ exports.addGoodsReceipt = async (req, res) => {
         ${journalRemarks},
         ${reference},
         ${userId}
-      )
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
     `;
-
-    const goodsReceiptId = receiptResult.recordset[0].Id;
+    const goodsReceiptId = idResult_goodsReceiptId.recordset[0].Id;
 
     // ---- DETAILS INSERT
     for (const item of items) {
@@ -198,8 +197,6 @@ exports.addGoodsReceipt = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
-
 
 // =============================================================
 // UPDATE GOODS RECEIPT (MASTER + DETAILS)
@@ -287,8 +284,6 @@ exports.updateGoodsReceipt = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
-
-
 
 // =============================================================
 // DELETE GOODS RECEIPT (SOFT DELETE)

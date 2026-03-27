@@ -58,26 +58,18 @@ exports.addRole = async (req, res) => {
   const { name, userId } = req.body;
 
   try {
-    // Check duplicates
-    const check = await sql.query`
-      SELECT COUNT(*) AS count 
-      FROM Roles 
-      WHERE RoleName = ${name?.toLowerCase()} AND IsActive = 1
-    `;
-    
-    if (check.recordset[0].count > 0) {
-      return res.status(409).json({ message: "Role with this name already exists" });
-    }
-
     await sql.query`
       INSERT INTO Roles (RoleName, InsertUserId, IsActive, InsertDate)
-      VALUES (${name?.toLowerCase()}, ${userId}, 1, GETDATE())
+      VALUES (${name?.trim()?.toLowerCase()}, ${userId}, 1, GETDATE())
     `;
 
     await auditService.logAction(userId, 'CREATE_ROLE', `Created Role: ${name}`, req.ip);
     res.status(200).json({ message: "Role added successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+      return res.status(409).json({ message: "Role with this name already exists" });
+    }
     console.error("ADD ROLE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -95,36 +87,25 @@ exports.updateRole = async (req, res) => {
   const { name, userId } = req.body;
 
   try {
-    // Check duplicates
-    const check = await sql.query`
-      SELECT COUNT(*) AS count 
-      FROM Roles 
-      WHERE RoleName = ${name?.toLowerCase()} AND IsActive = 1 AND RoleId != ${id}
-    `;
-    
-    if (check.recordset[0].count > 0) {
-      return res.status(409).json({ message: "Role with this name already exists" });
-    }
-
-    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const oldRole = oldRes.recordset[0];
+    const oldRes = await sql.query`SELECT RoleName FROM Roles WHERE RoleId = ${id}`;
+    const oldName = oldRes.recordset.length > 0 ? oldRes.recordset[0].RoleName : "Unknown";
 
     await sql.query`
       UPDATE Roles 
       SET 
-        RoleName = ${name?.toLowerCase()},
+        RoleName = ${name?.trim()?.toLowerCase()},
         UpdateUserId = ${userId},
         UpdateDate = GETDATE()
       WHERE RoleId = ${id}
     `;
 
-    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const newRole = newRes.recordset[0];
-    await auditService.logAction(userId, 'UPDATE_ROLE', `Updated Role: ${oldRole?.RoleName} -> ${name} (ID: ${id})`, req.ip);
-
+    await auditService.logAction(userId, 'UPDATE_ROLE', `Updated Role: ${oldName} -> ${name} (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Role updated successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+      return res.status(409).json({ message: "Role with this name already exists" });
+    }
     console.error("UPDATE ROLE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -139,22 +120,20 @@ exports.deleteRole = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const oldRole = oldRes.recordset[0];
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Roles 
       SET 
         IsActive = 0,
         DeleteUserId = ${userId},
         DeleteDate = GETDATE()
-      WHERE RoleId = ${id}
+      WHERE RoleId = ${id} AND IsActive = 1
     `;
 
-    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const newRole = newRes.recordset[0];
-    await auditService.logAction(userId, 'DELETE_ROLE', `Deleted Role (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Role already deleted" });
+    }
 
+    await auditService.logAction(userId, 'DELETE_ROLE', `Deleted Role (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Role deleted successfully" });
 
   } catch (error) {
@@ -227,24 +206,7 @@ exports.restoreRole = async (req, res) => {
   const { userId } = req.body;
 
   try {
-    // --- Duplicate Check Start ---
-    const targetResult = await sql.query`SELECT RoleName FROM Roles WHERE RoleId = ${id}`;
-    if (targetResult.recordset.length > 0) {
-      const targetName = targetResult.recordset[0].RoleName;
-      const duplicateCheck = await sql.query`
-        SELECT RoleId FROM Roles 
-        WHERE RoleName = ${targetName} AND IsActive = 1
-      `;
-      if (duplicateCheck.recordset.length > 0) {
-        return res.status(409).json({ message: "An active role with this name already exists. Cannot restore." });
-      }
-    }
-    // --- Duplicate Check End ---
-
-    const oldRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const oldRole = oldRes.recordset[0];
-
-    await sql.query`
+    const result = await sql.query`
       UPDATE Roles
       SET 
         IsActive = 1,
@@ -252,16 +214,20 @@ exports.restoreRole = async (req, res) => {
         UpdateDate = GETDATE(),
         DeleteDate = NULL,
         DeleteUserId = NULL
-      WHERE RoleId = ${id}
+      WHERE RoleId = ${id} AND IsActive = 0
     `;
 
-    const newRes = await sql.query`SELECT * FROM Roles WHERE RoleId = ${id}`;
-    const newRole = newRes.recordset[0];
-    await auditService.logAction(userId, 'RESTORE_ROLE', `Restored Role (ID: ${id})`, req.ip);
+    if (result.rowsAffected[0] === 0) {
+      return res.status(200).json({ message: "Role already restored or not found" });
+    }
 
+    await auditService.logAction(userId, 'RESTORE_ROLE', `Restored Role (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Role restored successfully" });
 
   } catch (error) {
+    if (error.number === 2627 || error.number === 2601) {
+        return res.status(409).json({ message: "Cannot restore. An active role with this name already exists." });
+    }
     console.error("RESTORE ROLE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }

@@ -57,7 +57,7 @@ exports.createEmployee = async (req, res) => {
     // ----------------------------------------------------
     // INSERT EMPLOYEE
     // ----------------------------------------------------
-    const employeeResult = await transaction.request().query(`
+    const employeeResult = await transaction.request().query`
       INSERT INTO Employees
       (
         FirstName, LastName, DesignationId, DepartmentId, RateType,
@@ -67,19 +67,19 @@ exports.createEmployee = async (req, res) => {
         UserId, InsertDate, InsertUserId, IsActive,
         BasicPay, DA, HRA, PFEmployee, PFEmployer, ESIEmployee, ESIEmployer
       )
-      OUTPUT inserted.Id
       VALUES
       (
-        '${firstName}', '${lastName}', ${(!isNaN(parseInt(designationId)) ? designationId : null) || 'NULL'}, ${(!isNaN(parseInt(departmentId)) ? departmentId : null) || 'NULL'}, '${rateType || ''}',
-        ${hourlyRate || 0}, ${salary || 0}, '${bloodGroup || ""}', '${phone || ''}', '${email || ''}',
-        '${pictureUrl || ""}',
-        ${(!isNaN(parseInt(countryId)) ? countryId : null) || 'NULL'}, ${(!isNaN(parseInt(stateId)) ? stateId : null) || 'NULL'}, ${(!isNaN(parseInt(cityId)) ? cityId : null) || 'NULL'}, ${(!isNaN(parseInt(regionId)) ? regionId : null) || 'NULL'}, ${(!isNaN(parseInt(territoryId)) ? territoryId : null) || 'NULL'},
-        '${zipCode || ''}', '${address || ''}',
-        ${(!isNaN(parseInt(payrollBankId)) ? payrollBankId : null) || 'NULL'}, '${payrollBankAccount || ''}',
+        ${firstName}, ${lastName}, ${parseInt(designationId) || null}, ${parseInt(departmentId) || null}, ${rateType || ''},
+        ${hourlyRate || 0}, ${salary || 0}, ${bloodGroup || ""}, ${phone || ''}, ${email || ''},
+        ${pictureUrl || ""},
+        ${parseInt(countryId) || null}, ${parseInt(stateId) || null}, ${parseInt(cityId) || null}, ${parseInt(regionId) || null}, ${parseInt(territoryId) || null},
+        ${zipCode || ''}, ${address || ''},
+        ${parseInt(payrollBankId) || null}, ${payrollBankAccount || ''},
         ${userId || 1}, GETDATE(), ${userId || 1}, 1,
         ${basicPay || 0}, ${da || 0}, ${hra || 0}, ${pfEmployee || 0}, ${pfEmployer || 0}, ${esiEmployee || 0}, ${esiEmployer || 0}
-      )
-    `);
+      );
+      SELECT SCOPE_IDENTITY() AS Id;
+    `;
 
     const employeeId = employeeResult.recordset[0].Id;
 
