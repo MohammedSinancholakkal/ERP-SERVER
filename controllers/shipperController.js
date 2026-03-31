@@ -80,7 +80,7 @@ exports.addShipper = async (req, res) => {
       res.status(201).json({ message: "Shipper added successfully" });
     } catch (error) {
       if (error.number === 2627 || error.number === 2601) {
-          return res.status(200).json({ message: "Shipper already exists" });
+          return res.status(409).json({ message: "Shipper already exists" });
       }
       console.log("ADD SHIPPER ERROR:", error);
       res.status(500).json({ message: "Server Error" });
@@ -180,13 +180,15 @@ exports.searchShippers = async (req, res) => {
       WHERE 
         IsActive = 1 AND
         (
-          CompanyName LIKE '%${q}%' OR
-          Phone LIKE '%${q}%'
+          CompanyName LIKE @q OR
+          Phone LIKE @q
         )
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

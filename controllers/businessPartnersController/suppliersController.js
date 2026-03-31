@@ -20,6 +20,12 @@ exports.getAllSuppliers = async (req, res) => {
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
 
+    // VALIDATE SORTING
+    const validColumns = ["id", "name", "companyName", "email", "phone", "pan", "gstin"];
+    const validOrders = ["ASC", "DESC"];
+    if (!validColumns.includes(sortBy) || !validOrders.includes(order)) {
+      return res.status(400).json({ message: "Invalid sorting parameters" });
+    }
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "CompanyName"; // Maps 'name' to 'CompanyName'
@@ -212,7 +218,7 @@ exports.addSupplier = async (req, res) => {
     if (error.number === 2627 || error.number === 2601) {
         const check = await sql.query`SELECT Id FROM Suppliers WHERE CompanyName = ${companyName.trim()} AND IsActive = 1`;
         if (check.recordset.length > 0) {
-            return res.status(200).json({ 
+            return res.status(409).json({ 
                 message: "Supplier already exists",
                 record: { id: check.recordset[0].Id, companyName, email, phone }
             });
@@ -341,6 +347,12 @@ exports.searchSuppliers = async (req, res) => {
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
 
+    // VALIDATE SORTING
+    const validColumns = ["id", "name", "companyName", "email", "phone"];
+    const validOrders = ["ASC", "DESC"];
+    if (!validColumns.includes(sortBy) || !validOrders.includes(order)) {
+      return res.status(400).json({ message: "Invalid sorting parameters" });
+    }
     
     let sortColumn = "Id";
     if (sortBy === "name") sortColumn = "CompanyName";

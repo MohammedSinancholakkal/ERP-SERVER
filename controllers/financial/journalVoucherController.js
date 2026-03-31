@@ -200,7 +200,7 @@ exports.updateJournalVoucher = async (req, res) => {
 
         const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
         const updatedVoucher = updatedRes.recordset[0];
-        await auditService.logAction(userId, 'UPDATE_JOURNAL_VOUCHER', `Updated Journal Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
+        await auditService.logAction(userId, 'UPDATE_JOURNAL_VOUCHER', `Updated Journal Voucher (ID: ${id}) - Amount: ${amount}`, req.ip);
         res.status(200).json({ message: "Journal Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE JOURNAL VOUCHER ERROR:", error);
@@ -235,7 +235,7 @@ exports.deleteJournalVoucher = async (req, res) => {
 
         const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
         const deletedVoucher = deletedRes.recordset[0];
-        await auditService.logAction(userId, 'DELETE_JOURNAL_VOUCHER', `Deleted Journal Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
+        await auditService.logAction(userId, 'DELETE_JOURNAL_VOUCHER', `Deleted Journal Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Journal Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE JOURNAL VOUCHER ERROR:", error);
@@ -270,7 +270,7 @@ exports.restoreJournalVoucher = async (req, res) => {
 
         const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM JournalVouchers WHERE Id = @Id`);
         const restoredVoucher = restoredRes.recordset[0];
-        await auditService.logAction(userId, 'RESTORE_JOURNAL_VOUCHER', `Restored Journal Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
+        await auditService.logAction(userId, 'RESTORE_JOURNAL_VOUCHER', `Restored Journal Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Journal Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE JOURNAL VOUCHER ERROR:", error);

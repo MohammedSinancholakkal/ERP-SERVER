@@ -66,7 +66,7 @@ exports.addTaxType = async (req, res) => {
     res.status(200).json({ message: "Tax Type added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Tax Type already exists" });
+        return res.status(409).json({ message: "Tax Type already exists" });
     }
     console.error("ADD TAX TYPE ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -149,11 +149,13 @@ exports.searchTaxTypes = async (req, res) => {
     const query = `
       SELECT id AS typeId, name AS typeName, isInterState, percentage
       FROM TaxTypes
-      WHERE isActive = 1 AND name LIKE '%${q}%'
+      WHERE isActive = 1 AND name LIKE @q
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     console.error("SEARCH TAX TYPES ERROR:", error);

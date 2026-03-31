@@ -16,17 +16,23 @@ exports.getAllWarehouses = async (req, res) => {
     let stateId = req.query.stateId;
     let cityId = req.query.cityId;
 
+    const request = new sql.Request();
     let whereClause = "W.IsActive = 1";
-    if (countryId) whereClause += ` AND W.CountryId = ${countryId}`;
-    if (stateId) whereClause += ` AND W.StateId = ${stateId}`;
-    if (cityId) whereClause += ` AND W.CityId = ${cityId}`;
+    if (countryId) {
+      whereClause += " AND W.CountryId = @countryId";
+      request.input('countryId', sql.Int, countryId);
+    }
+    if (stateId) {
+      whereClause += " AND W.StateId = @stateId";
+      request.input('stateId', sql.Int, stateId);
+    }
+    if (cityId) {
+      whereClause += " AND W.CityId = @cityId";
+      request.input('cityId', sql.Int, cityId);
+    }
 
-    // Count total
-    const totalResult = await sql.query(`
-      SELECT COUNT(*) AS Total 
-      FROM Warehouses W
-      WHERE ${whereClause}
-    `);
+    const totalQuery = `SELECT COUNT(*) AS Total FROM Warehouses W WHERE ${whereClause}`;
+    const totalResult = await request.query(totalQuery);
 
     // Fetch records
     const sortBy = req.query.sortBy || "id";
@@ -39,7 +45,7 @@ exports.getAllWarehouses = async (req, res) => {
     else if (sortBy === "StateName") sortColumn = "S.Name";
     else if (sortBy === "CityName") sortColumn = "CI.Name";
 
-    const result = await sql.query(`
+    const dataQuery = `
       SELECT 
         W.Id,
         W.Name,
@@ -69,7 +75,9 @@ exports.getAllWarehouses = async (req, res) => {
       ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
-    `);
+    `;
+
+    const result = await request.query(dataQuery);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -111,7 +119,7 @@ exports.addWarehouse = async (req, res) => {
     res.status(201).json({ message: "Warehouse added successfully", id: newId });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Warehouse already exists" });
+        return res.status(409).json({ message: "Warehouse already exists" });
     }
     console.log("ADD WAREHOUSE ERROR:", error);
     res.status(500).json({ message: "Server Error" });

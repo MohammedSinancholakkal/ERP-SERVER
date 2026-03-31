@@ -9,8 +9,14 @@ exports.getAllSales = async (req, res) => {
     const limit = parseInt(req.query.limit) || 25;
     const offset = (page - 1) * limit;
 
-    const sortBy = req.query.sortBy || "id";
+    const sortBy = (req.query.sortBy || "id").toLowerCase();
     const order = (req.query.order || "DESC").toUpperCase();
+
+    // VALIDATE SORTING
+    const validOrders = ["ASC", "DESC"];
+    if (!validOrders.includes(order)) {
+      return res.status(400).json({ message: "Invalid sorting order" });
+    }
 
     let sortColumn = "S.InsertDate"; 
     switch (sortBy) {
@@ -146,7 +152,7 @@ exports.getSaleById = async (req, res) => {
     `;
 
     const details = await sql.query`
-      SELECT sd.*, p.HSNCode AS hsnCode, p.Colour AS colour, p.Grade AS grade, p.BrandId AS brandId
+      SELECT sd.*, sd.ProductId AS productId, p.HSNCode AS hsnCode, p.Colour AS colour, p.Grade AS grade, p.BrandId AS brandId
       FROM SaleDetails sd
       LEFT JOIN Products p ON sd.ProductId = p.Id
       WHERE sd.SaleId = ${id} AND sd.IsActive = 1
@@ -172,9 +178,11 @@ exports.addSale = async (req, res) => {
   const now = new Date();
   const vno = generateVNo(now);
   const transaction = new sql.Transaction();
+  let transactionStarted = false;
 
   try {
     await transaction.begin();
+    transactionStarted = true;
 
     for (const item of items) {
         if(item.productId) {
@@ -201,6 +209,7 @@ exports.addSale = async (req, res) => {
     const saleId = idResult_saleId.recordset[0].Id;
 
     for (const item of items) {
+      if (!item.productId) continue; // Skip items without product ID
       const detailReq = new sql.Request(transaction);
       await detailReq.query`
         INSERT INTO SaleDetails (ProductId, ProductName, Description, UnitId, UnitName, Quantity, PurchasePrice, UnitPrice, Discount, Total, SaleId, InsertUserId)
@@ -279,11 +288,18 @@ exports.addSale = async (req, res) => {
     } catch (err) { console.error("Accounting Posting Error:", err); throw err; }
 
     await transaction.commit();
+    transactionStarted = false;
     await auditService.logAction(userId, 'CREATE_SALE', `Created Sale (VNo: ${vno || invoiceNo}, Net Total: ${netTotal})`, req.ip);
     res.status(200).json({ message: "Sale added successfully" });
 
   } catch (error) {
-    if(transaction._curr) await transaction.rollback();
+    if (transactionStarted) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error("ROLLBACK ERROR:", rollbackError);
+      }
+    }
     console.error("ADD SALE ERROR:", error);
     res.status(500).json({ message: error.message || "Server error" });
   }
@@ -294,10 +310,12 @@ exports.updateSale = async (req, res) => {
   const { customerId, date, discount, totalDiscount, totalTax, noTax, shippingCost, grandTotal, netTotal, paidAmount, due, change, paymentAccount, details, vno, vehicleNo, items, userId } = req.body;
   const safeNumbers = { discount: Number(discount) || 0, totalDiscount: Number(totalDiscount) || 0, shippingCost: Number(shippingCost) || 0, grandTotal: Number(grandTotal) || 0, netTotal: Number(netTotal) || 0, paidAmount: Number(paidAmount) || 0, due: Number(due) || 0, change: Number(change) || 0, totalTax: Number(totalTax) || 0 };
   const transaction = new sql.Transaction();
+  let transactionStarted = false;
   let finalVNo = vno, oldVNo = null, dbInvoiceNo = null;
 
   try {
     await transaction.begin();
+    transactionStarted = true;
     const currentRes = await new sql.Request(transaction).query`SELECT * FROM Sales WHERE Id = ${id}`;
     const currentSale = currentRes.recordset[0];
     if (currentSale) { oldVNo = currentSale.VNo; dbInvoiceNo = currentSale.InvoiceNo; }
@@ -317,13 +335,14 @@ exports.updateSale = async (req, res) => {
         }
     }
 
-    await new sql.Request(transaction).query`UPDATE Sales SET CustomerId = ${customerId}, Date = ${date}, Discount = ${safeNumbers.discount}, TotalDiscount = ${safeNumbers.totalDiscount}, TotalTax = ${safeNumbers.totalTax}, NoTax = ${noTax || 0}, ShippingCost = ${safeNumbers.shippingCost}, GrandTotal = ${safeNumbers.grandTotal}, NetTotal = ${safeNumbers.netTotal}, PaidAmount = ${safeNumbers.paidAmount}, Due = ${safeNumbers.due}, Change = ${safeNumbers.change}, PaymentAccount = ${paymentAccount}, Details = ${details}, VNo = ${finalVNo}, VehicleNo = ${vehicleNo}, TaxTypeId = ${req.body.taxTypeId}, CGSTRate = ${req.body.cgstRate}, SGSTRate = ${req.body.sgstRate}, IGSTRate = ${req.body.igstRate}, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
+    await new sql.Request(transaction).query`UPDATE Sales SET CustomerId = ${customerId}, Date = ${date}, Discount = ${safeNumbers.discount}, TotalDiscount = ${safeNumbers.totalDiscount}, TotalTax = ${safeNumbers.totalTax}, NoTax = ${noTax || 0}, ShippingCost = ${safeNumbers.shippingCost}, GrandTotal = ${safeNumbers.grandTotal}, NetTotal = ${safeNumbers.netTotal}, PaidAmount = ${safeNumbers.paidAmount}, Due = ${safeNumbers.due}, Change = ${safeNumbers.change}, PaymentAccount = ${paymentAccount}, Details = ${details}, VNo = ${finalVNo}, VehicleNo = ${vehicleNo}, TaxTypeId = ${req.body.taxTypeId || null}, CGSTRate = ${req.body.cgstRate || 0}, SGSTRate = ${req.body.sgstRate || 0}, IGSTRate = ${req.body.igstRate || 0}, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
     await new sql.Request(transaction).query`DELETE FROM SaleDetails WHERE SaleId = ${id}`;
 
     for (const item of items) {
+      if (!item.productId) continue; // Skip items without product ID
       await new sql.Request(transaction).query`INSERT INTO SaleDetails (ProductId, ProductName, Description, UnitId, UnitName, Quantity, PurchasePrice, UnitPrice, Discount, Total, SaleId, InsertUserId)
         VALUES (${item.productId}, ${item.productName}, ${item.description}, ${item.unitId}, ${item.unitName}, ${item.quantity}, ${item.purchasePrice}, ${item.unitPrice}, ${item.discount}, ${item.total}, ${id}, ${userId})`;
-      if(item.productId) await new sql.Request(transaction).query`UPDATE Products SET UnitsInStock = ISNULL(UnitsInStock, 0) - ${Number(item.quantity) || 0}, QuantityOut = ISNULL(QuantityOut, 0) + ${Number(item.quantity) || 0} WHERE Id = ${item.productId}`;
+      await new sql.Request(transaction).query`UPDATE Products SET UnitsInStock = ISNULL(UnitsInStock, 0) - ${Number(item.quantity) || 0}, QuantityOut = ISNULL(QuantityOut, 0) + ${Number(item.quantity) || 0} WHERE Id = ${item.productId}`;
     }
 
     try {
@@ -356,12 +375,19 @@ exports.updateSale = async (req, res) => {
     } catch (accErr) { console.error("ACCOUNTING UPDATE ERROR:", accErr); throw accErr; }
 
     await transaction.commit();
+    transactionStarted = false;
     const updatedSaleResult = await sql.query`SELECT * FROM Sales WHERE Id = ${id}`;
     const updatedSale = updatedSaleResult.recordset[0];
-    await auditService.logAction(userId, 'UPDATE_SALE', `Updated Sale (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip, currentSale, updatedSale);
+    await auditService.logAction(userId, 'UPDATE_SALE', `Updated Sale (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip);
     res.status(200).json({ message: "Sale updated successfully" });
   } catch (error) {
-    if(transaction._curr) await transaction.rollback();
+    if (transactionStarted) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error("ROLLBACK ERROR:", rollbackError);
+      }
+    }
     console.error("UPDATE SALE ERROR:", error);
     res.status(500).json({ message: error.message || "Server error" });
   }
@@ -386,7 +412,7 @@ exports.deleteSale = async (req, res) => {
     }
     await transaction.commit();
     const deletedSale = (await sql.query`SELECT * FROM Sales WHERE Id = ${id}`).recordset[0];
-    await auditService.logAction(userId, 'DELETE_SALE', `Deleted Sale (ID: ${id})`, req.ip, currentSale, deletedSale);
+    await auditService.logAction(userId, 'DELETE_SALE', `Deleted Sale (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Sale deleted successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback();
@@ -425,7 +451,7 @@ exports.restoreSale = async (req, res) => {
     }
     await transaction.commit();
     const restoredSale = (await sql.query`SELECT * FROM Sales WHERE Id = ${id}`).recordset[0];
-    await auditService.logAction(userId, 'RESTORE_SALE', `Restored Sale (ID: ${id})`, req.ip, currentSale, restoredSale);
+    await auditService.logAction(userId, 'RESTORE_SALE', `Restored Sale (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Sale restored" });
   } catch (error) { if(transaction._curr) await transaction.rollback(); res.status(500).json({ message: error.message }); }
 };
@@ -446,8 +472,15 @@ exports.searchSale = async (req, res) => {
 exports.getProductWiseSalesReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    let filter = startDate && endDate ? ` AND s.Date BETWEEN '${startDate}' AND '${endDate}' ` : "";
-    const result = await sql.query(`SELECT s.Date AS date, sd.ProductName AS productName, s.InvoiceNo AS invoiceNo, s.VNo AS vno, c.Name AS customerName, sd.UnitPrice AS rate, sd.Quantity AS quantity, sd.Discount AS discount, sd.Total AS total FROM SaleDetails sd INNER JOIN Sales s ON sd.SaleId = s.Id LEFT JOIN Customers c ON s.CustomerId = c.Id WHERE s.IsActive = 1 ${filter} ORDER BY s.Date DESC`);
+    let filter = startDate && endDate ? ` AND s.Date BETWEEN @startDate AND @endDate ` : "";
+    
+    const request = new sql.Request();
+    if(startDate && endDate) {
+        request.input("startDate", sql.Date, startDate);
+        request.input("endDate", sql.Date, endDate);
+    }
+    
+    const result = await request.query(`SELECT s.Date AS date, sd.ProductName AS productName, s.InvoiceNo AS invoiceNo, s.VNo AS vno, c.Name AS customerName, sd.UnitPrice AS rate, sd.Quantity AS quantity, sd.Discount AS discount, sd.Total AS total FROM SaleDetails sd INNER JOIN Sales s ON sd.SaleId = s.Id LEFT JOIN Customers c ON s.CustomerId = c.Id WHERE s.IsActive = 1 ${filter} ORDER BY s.Date DESC`);
     res.status(200).json({ records: result.recordset });
   } catch (error) { res.status(500).json({ message: "Error" }); }
 };

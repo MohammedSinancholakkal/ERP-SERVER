@@ -220,12 +220,19 @@ const parsedEndDate   = istToUTC(endDate);
         // 1. Get Internal Attendee Emails
         let internalEmails = [];
         if (Array.isArray(attendees) && attendees.length > 0) {
-            const attendeeIds = attendees.map(a => a.attendeeId).filter(id => id).join(',');
+            const attendeeIds = attendees.map(a => parseInt(a.attendeeId, 10)).filter(id => !isNaN(id));
             
-            if (attendeeIds) {
-                const emailResult = await sql.query(`
+            if (attendeeIds.length > 0) {
+                const emailReq = new sql.Request();
+                const idParams = attendeeIds.map((id, index) => {
+                    const paramName = `id${index}`;
+                    emailReq.input(paramName, sql.Int, id);
+                    return `@${paramName}`;
+                });
+
+                const emailResult = await emailReq.query(`
                     SELECT Email FROM Employees 
-                    WHERE Id IN (${attendeeIds}) 
+                    WHERE Id IN (${idParams.join(',')}) 
                     AND Email IS NOT NULL 
                     AND Email != ''
                 `);
@@ -243,7 +250,7 @@ const parsedEndDate   = istToUTC(endDate);
 
         if (mtInt) {
             try {
-                const mtResult = await sql.query(`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`);
+                const mtResult = await sql.query`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`;
                 if (mtResult.recordset && mtResult.recordset[0]) {
                     meetingTypeName = mtResult.recordset[0].Name;
                 }
@@ -254,7 +261,7 @@ const parsedEndDate   = istToUTC(endDate);
 
         if (locInt) {
             try {
-                const locResult = await sql.query(`SELECT Name FROM Locations WHERE Id = ${locInt}`);
+                const locResult = await sql.query`SELECT Name FROM Locations WHERE Id = ${locInt}`;
                 if (locResult.recordset && locResult.recordset[0]) {
                     locationName = locResult.recordset[0].Name;
                 }
@@ -500,12 +507,19 @@ UpdateUserId = ${userIdInt}
         // 1. Get Internal Attendee Emails
         let internalEmails = [];
         if (Array.isArray(attendees) && attendees.length > 0) {
-            const attendeeIds = attendees.map(a => a.attendeeId).filter(id => id).join(',');
+            const attendeeIds = attendees.map(a => parseInt(a.attendeeId, 10)).filter(id => !isNaN(id));
             
-            if (attendeeIds) {
-                const emailResult = await sql.query(`
+            if (attendeeIds.length > 0) {
+                const emailReq = new sql.Request();
+                const idParams = attendeeIds.map((id, index) => {
+                    const paramName = `id${index}`;
+                    emailReq.input(paramName, sql.Int, id);
+                    return `@${paramName}`;
+                });
+
+                const emailResult = await emailReq.query(`
                     SELECT Email FROM Employees 
-                    WHERE Id IN (${attendeeIds}) 
+                    WHERE Id IN (${idParams.join(',')}) 
                     AND Email IS NOT NULL 
                     AND Email != ''
                 `);
@@ -523,7 +537,7 @@ UpdateUserId = ${userIdInt}
 
         if (mtInt) {
             try {
-                const mtResult = await sql.query(`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`);
+                const mtResult = await sql.query`SELECT Name FROM MeetingTypes WHERE Id = ${mtInt}`;
                 if (mtResult.recordset && mtResult.recordset[0]) {
                     meetingTypeName = mtResult.recordset[0].Name;
                 }
@@ -534,7 +548,7 @@ UpdateUserId = ${userIdInt}
 
         if (locInt) {
             try {
-                const locResult = await sql.query(`SELECT Name FROM Locations WHERE Id = ${locInt}`);
+                const locResult = await sql.query`SELECT Name FROM Locations WHERE Id = ${locInt}`;
                 if (locResult.recordset && locResult.recordset[0]) {
                     locationName = locResult.recordset[0].Name;
                 }
@@ -685,7 +699,7 @@ exports.searchMeetings = async (req, res) => {
 
   try {
     const sortBy = req.query.sortBy || "id";
-    const order = (req.query.order || "DESC").toUpperCase();
+    const order = (req.query.order === "ASC" || req.query.order === "asc") ? "ASC" : "DESC";
 
 
     let sortColumn = "m.Id";

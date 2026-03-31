@@ -69,13 +69,7 @@ exports.addCountry = async (req, res) => {
     });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        const check = await sql.query`SELECT id, name FROM Countries WHERE name = ${name} AND isActive = 1`;
-        if (check.recordset.length > 0) {
-            return res.status(200).json({ 
-                message: "Country already exists", 
-                record: check.recordset[0]
-            });
-        }
+        return res.status(409).json({ message: "Country already exists" });
     }
     console.error("ADD COUNTRY ERROR:", error);
     res.status(500).json({ message: "Server error" });
@@ -156,10 +150,12 @@ exports.searchCountries = async (req, res) => {
     const query = `
       SELECT id, name
       FROM Countries
-      WHERE isActive = 1 AND name LIKE '%${q}%'
+      WHERE isActive = 1 AND name LIKE @q
       ORDER BY ${sortColumn} ${order}
     `;
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Error searching countries" });

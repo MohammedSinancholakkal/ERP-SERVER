@@ -75,7 +75,7 @@ exports.addCustomerGroup = async (req, res) => {
     res.status(201).json({ message: "Customer Group added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Customer group already exists" });
+        return res.status(409).json({ message: "Customer group already exists" });
     }
     console.log("ADD CUSTOMER GROUP ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -154,7 +154,7 @@ exports.searchCustomerGroups = async (req, res) => {
   const { q } = req.query;
 
   try {
-    const result = await sql.query`
+    const query = `
       SELECT 
         Id,
         GroupName,
@@ -163,11 +163,14 @@ exports.searchCustomerGroups = async (req, res) => {
       WHERE 
         IsActive = 1 AND
         (
-          GroupName LIKE ${'%' + q + '%'} OR
-          Description LIKE ${'%' + q + '%'}
+          GroupName LIKE @q OR
+          Description LIKE @q
         )
       ORDER BY GroupName ASC
     `;
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

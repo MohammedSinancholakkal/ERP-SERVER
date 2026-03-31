@@ -72,7 +72,7 @@ exports.addAttendeeType = async (req, res) => {
     res.status(201).json({ message: "Attendee type added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Attendee type already exists" });
+        return res.status(409).json({ message: "Attendee type already exists" });
     }
     console.log("ADD ATTENDEE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -156,11 +156,13 @@ exports.searchAttendeeTypes = async (req, res) => {
     const query = `
       SELECT Id, Name
       FROM AttendeeTypes
-      WHERE IsActive = 1 AND Name LIKE '%${q}%'
+      WHERE IsActive = 1 AND Name LIKE @searchTerm
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input("searchTerm", sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

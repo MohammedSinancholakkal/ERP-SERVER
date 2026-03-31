@@ -134,7 +134,7 @@ exports.updateQuotation = async (req, res) => {
     }
     await transaction.commit();
     const updatedQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
-    await auditService.logAction(userId, 'UPDATE_QUOTATION', `Updated Quotation (ID: ${id})`, req.ip, currentQuotation, updatedQuotation);
+    await auditService.logAction(userId, 'UPDATE_QUOTATION', `Updated Quotation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Quotation updated" });
   } catch (error) { await transaction.rollback(); res.status(500).json({ message: "Error" }); }
 };
@@ -148,7 +148,7 @@ exports.deleteQuotation = async (req, res) => {
     await sql.query`UPDATE Quotations SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE Id = ${id}`;
     await sql.query`UPDATE QuotationDetails SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE QuotationId = ${id}`;
     const deletedQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
-    await auditService.logAction(userId, 'DELETE_QUOTATION', `Deleted Quotation (ID: ${id})`, req.ip, currentQuotation, deletedQuotation);
+    await auditService.logAction(userId, 'DELETE_QUOTATION', `Deleted Quotation (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Quotation deleted" });
   } catch (error) { res.status(500).json({ message: "Error" }); }
 };
@@ -156,22 +156,51 @@ exports.deleteQuotation = async (req, res) => {
 // INACTIVE & RESTORE
 exports.getInactiveQuotations = async (req, res) => {
   try {
-    const result = await sql.query`SELECT q.*, c.Name AS customerName FROM Quotations q LEFT JOIN Customers c ON q.CustomerId = c.Id WHERE q.IsActive = 0 ORDER BY q.DeleteDate DESC`;
+    const result = await sql.query`SELECT q.*, q.Id AS id, c.Name AS customerName FROM Quotations q LEFT JOIN Customers c ON q.CustomerId = c.Id WHERE q.IsActive = 0 ORDER BY q.DeleteDate DESC`;
     res.status(200).json({ records: result.recordset });
   } catch (error) { res.status(500).json({ message: "Error" }); }
 };
 
 exports.restoreQuotation = async (req, res) => {
-  const { id } = req.params;
-  const { userId } = req.body;
+  const id = parseInt(req.params.id, 10);
+  const userId = parseInt(req.body.userId, 10);
+
+  if (isNaN(id) || isNaN(userId)) {
+    return res.status(400).json({ message: "Invalid ID or User ID" });
+  }
+
+  const transaction = new sql.Transaction();
+  let transactionStarted = false;
   try {
-    const currentQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
-    await sql.query`UPDATE Quotations SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
-    await sql.query`UPDATE QuotationDetails SET IsActive = 1 WHERE QuotationId = ${id}`;
-    const restoredQuotation = (await sql.query`SELECT * FROM Quotations WHERE Id = ${id}`).recordset[0];
-    await auditService.logAction(userId, 'RESTORE_QUOTATION', `Restored Quotation (ID: ${id})`, req.ip, currentQuotation, restoredQuotation);
-    res.status(200).json({ message: "Quotation restored" });
-  } catch (error) { res.status(500).json({ message: "Error" }); }
+    await transaction.begin();
+    transactionStarted = true;
+
+    const currentRes = await new sql.Request(transaction).query`SELECT * FROM Quotations WHERE Id = ${id}`;
+    const currentQuotation = currentRes.recordset[0];
+
+    if (!currentQuotation) {
+      throw new Error("Quotation not found");
+    }
+
+    await new sql.Request(transaction).query`UPDATE Quotations SET IsActive = 1, UpdateDate = GETDATE(), UpdateUserId = ${userId} WHERE Id = ${id}`;
+    await new sql.Request(transaction).query`UPDATE QuotationDetails SET IsActive = 1 WHERE QuotationId = ${id}`;
+
+    await transaction.commit();
+    transactionStarted = false;
+
+    await auditService.logAction(userId, 'RESTORE_QUOTATION', `Restored Quotation (ID: ${id})`, req.ip);
+    res.status(200).json({ message: "Quotation restored successfully" });
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error("ROLLBACK ERROR:", rollbackError);
+      }
+    }
+    console.error("RESTORE QUOTATION ERROR:", error);
+    res.status(500).json({ message: error.message || "Error restoring quotation" });
+  }
 };
 
 // SEARCH

@@ -14,16 +14,23 @@ exports.getAllLocations = async (req, res) => {
     let stateId = req.query.stateId;
     let cityId = req.query.cityId;
 
+    const request = new sql.Request();
     let whereClause = "L.IsActive = 1";
-    if (countryId) whereClause += ` AND L.CountryId = ${countryId}`;
-    if (stateId) whereClause += ` AND L.StateId = ${stateId}`;
-    if (cityId) whereClause += ` AND L.CityId = ${cityId}`;
+    if (countryId) {
+      whereClause += " AND L.CountryId = @countryId";
+      request.input('countryId', sql.Int, countryId);
+    }
+    if (stateId) {
+      whereClause += " AND L.StateId = @stateId";
+      request.input('stateId', sql.Int, stateId);
+    }
+    if (cityId) {
+      whereClause += " AND L.CityId = @cityId";
+      request.input('cityId', sql.Int, cityId);
+    }
 
-    const totalResult = await sql.query(`
-      SELECT COUNT(*) AS Total
-      FROM Locations L
-      WHERE ${whereClause}
-    `);
+    const totalQuery = `SELECT COUNT(*) AS Total FROM Locations L WHERE ${whereClause}`;
+    const totalResult = await request.query(totalQuery);
 
     const sortBy = req.query.sortBy || "id";
     const order = (req.query.order || "DESC").toUpperCase();
@@ -36,7 +43,7 @@ exports.getAllLocations = async (req, res) => {
     else if (sortBy === "CityName") sortColumn = "CI.Name";
     else if (sortBy === "id") sortColumn = "L.Id";
 
-    const result = await sql.query(`
+    const dataQuery = `
       SELECT 
         L.Id, L.Name, L.CountryId, C.Name AS CountryName,
         L.StateId, S.Name AS StateName, L.CityId, CI.Name AS CityName,
@@ -50,7 +57,9 @@ exports.getAllLocations = async (req, res) => {
       ORDER BY ${sortColumn} ${order}
       OFFSET ${offset} ROWS
       FETCH NEXT ${limit} ROWS ONLY
-    `);
+    `;
+
+    const result = await request.query(dataQuery);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -91,7 +100,7 @@ exports.addLocation = async (req, res) => {
 
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Location already exists" });
+        return res.status(409).json({ message: "Location already exists" });
     }
     console.log("ADD LOCATION ERROR:", error);
     res.status(500).json({ message: "Server Error" });

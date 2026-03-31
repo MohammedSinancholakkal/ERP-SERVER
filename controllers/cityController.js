@@ -88,7 +88,7 @@ exports.addCity = async (req, res) => {
     });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "City already exists" });
+        return res.status(409).json({ message: "City already exists" });
     }
     console.error("ADD CITY ERROR:", error);
     res.status(500).json({ message: "Error adding city" });
@@ -156,10 +156,12 @@ exports.searchCities = async (req, res) => {
       FROM Cities c
       INNER JOIN Countries co ON c.countryId = co.id
       INNER JOIN States s ON c.stateId = s.id
-      WHERE c.isActive = 1 AND (c.name LIKE '%${q}%' OR co.name LIKE '%${q}%' OR s.name LIKE '%${q}%')
+      WHERE c.isActive = 1 AND (c.name LIKE @q OR co.name LIKE @q OR s.name LIKE @q)
       ORDER BY ${sortColumn} ${order}
     `;
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Error searching cities" });

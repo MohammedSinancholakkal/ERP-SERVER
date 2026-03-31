@@ -15,8 +15,14 @@ exports.getAllServiceInvoices = async (req, res) => {
       WHERE IsActive = 1
     `;
 
-    const sortBy = req.query.sortBy || "id";
+    const sortBy = (req.query.sortBy || "id").toLowerCase();
     const order = (req.query.order || "DESC").toUpperCase();
+
+    // VALIDATE SORTING
+    const validOrders = ["ASC", "DESC"];
+    if (!validOrders.includes(order)) {
+      return res.status(400).json({ message: "Invalid sorting order" });
+    }
 
     let sortColumn = "si.Id";
     switch (sortBy) {
@@ -314,9 +320,45 @@ exports.updateServiceInvoice = async (req, res) => {
       `;
     }
 
-    // Delete old accounting entries and recreate
     await new sql.Request(transaction).query`DELETE FROM Transactions WHERE VNo = ${oldVNo} AND (Vtype = 'SERVICES' OR Vtype = 'Receipt')`;
-    // (Accounting logic similar to add, omitted for brevity but should be implemented)
+    
+    // Recreate Accounting Entries
+    const custRes = await new sql.Request(transaction).query`SELECT COAId FROM Customers WHERE Id = ${customerId}`;
+    const customerCOAId = custRes.recordset[0]?.COAId;
+
+    if (safeNumbers.paidAmount > 0 && customerCOAId) {
+        let incomeRes = await new sql.Request(transaction).query`SELECT Id FROM Accounts WHERE HeadName = 'Services' OR HeadName = 'services' OR HeadName = 'Sales Account'`;
+        let incomeCOAId = incomeRes.recordset[0]?.Id;
+        
+        const accountingService = require("../../services/accountingService");
+
+        // Income entry (Credit)
+        await accountingService.postTransaction({
+            vDate: date, vType: 'SERVICES', vNo: finalVNo || oldVNo, coaId: incomeCOAId,
+            credit: safeNumbers.netTotal, narration: `Service Invoice ${finalVNo || oldVNo} (Updated)`, userId, transaction
+        });
+
+        // Customer entry (Debit)
+        await accountingService.postTransaction({
+            vDate: date, vType: 'SERVICES', vNo: finalVNo || oldVNo, coaId: customerCOAId,
+            debit: safeNumbers.netTotal, narration: `Service Invoice ${finalVNo || oldVNo} (Updated)`, userId, transaction
+        });
+
+        // Receipt entry (if paid)
+        let cashRes = await new sql.Request(transaction).query`SELECT Id FROM Accounts WHERE HeadName = ${paymentAccount}`;
+        let paymentCOAId = cashRes.recordset[0]?.Id;
+
+        if (paymentCOAId) {
+            await accountingService.postTransaction({
+                vDate: date, vType: 'Receipt', vNo: finalVNo || oldVNo, coaId: paymentCOAId,
+                debit: safeNumbers.paidAmount, narration: `Payment received for ${finalVNo || oldVNo} (Updated)`, userId, transaction
+            });
+            await accountingService.postTransaction({
+                vDate: date, vType: 'Receipt', vNo: finalVNo || oldVNo, coaId: customerCOAId,
+                credit: safeNumbers.paidAmount, narration: `Payment received for ${finalVNo || oldVNo} (Updated)`, userId, transaction
+            });
+        }
+    }
 
     await transaction.commit();
     res.status(200).json({ message: "Invoice updated successfully" });
@@ -333,15 +375,23 @@ exports.updateServiceInvoice = async (req, res) => {
 exports.deleteServiceInvoice = async (req, res) => {
   const { id } = req.params;
   const { userId } = req.body;
+  const transaction = new sql.Transaction();
   try {
-    await sql.query`UPDATE ServiceInvoices SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE Id = ${id}`;
-    await sql.query`UPDATE ServiceInvoiceDetails SET IsActive = 0 WHERE ServiceInvoiceId = ${id}`;
-    const inv = await sql.query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
-    if (inv.recordset[0]?.VNo) {
-        await sql.query`UPDATE Transactions SET IsActive = 0 WHERE VNo = ${inv.recordset[0].VNo}`;
+    await transaction.begin();
+    const request = new sql.Request(transaction);
+    
+    await request.query`UPDATE ServiceInvoices SET IsActive = 0, DeleteDate = GETDATE(), DeleteUserId = ${userId} WHERE Id = ${id}`;
+    await request.query`UPDATE ServiceInvoiceDetails SET IsActive = 0 WHERE ServiceInvoiceId = ${id}`;
+    
+    const invRes = await request.query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
+    if (invRes.recordset[0]?.VNo) {
+        await request.query`UPDATE Transactions SET IsActive = 0 WHERE VNo = ${invRes.recordset[0].VNo}`;
     }
+    
+    await transaction.commit();
     res.status(200).json({ message: "Deleted successfully" });
   } catch (error) {
+    if (transaction) await transaction.rollback().catch(() => {});
     console.error("DELETE SERVICE INVOICE ERROR:", error);
     res.status(500).json({ message: "Server error" });
   }
@@ -359,9 +409,24 @@ exports.getInactiveServiceInvoices = async (req, res) => {
 
 exports.restoreServiceInvoice = async (req, res) => {
     const { id } = req.params;
+    const transaction = new sql.Transaction();
     try {
-        await sql.query`UPDATE ServiceInvoices SET IsActive = 1 WHERE Id = ${id}`;
-        await sql.query`UPDATE ServiceInvoiceDetails SET IsActive = 1 WHERE ServiceInvoiceId = ${id}`;
+        await transaction.begin();
+        const request = new sql.Request(transaction);
+        
+        await request.query`UPDATE ServiceInvoices SET IsActive = 1 WHERE Id = ${id}`;
+        await request.query`UPDATE ServiceInvoiceDetails SET IsActive = 1 WHERE ServiceInvoiceId = ${id}`;
+        
+        const invRes = await request.query`SELECT VNo FROM ServiceInvoices WHERE Id = ${id}`;
+        if (invRes.recordset[0]?.VNo) {
+            await request.query`UPDATE Transactions SET IsActive = 1 WHERE VNo = ${invRes.recordset[0].VNo}`;
+        }
+        
+        await transaction.commit();
         res.status(200).json({ message: "Restored" });
-    } catch (e) { res.status(500).json({ message: "Error" }); }
+    } catch (e) {
+        if (transaction) await transaction.rollback().catch(() => {});
+        console.error("RESTORE SERVICE INVOICE ERROR:", e);
+        res.status(500).json({ message: "Error" });
+    }
 };

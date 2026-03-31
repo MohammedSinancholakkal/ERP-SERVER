@@ -219,7 +219,8 @@ exports.addBank = async (req, res) => {
       .input('isInt', sql.Bit, isInternal)
       .query(`
         INSERT INTO Banks (BankName, ACName, ACNumber, Branch, SignaturePicture, InsertUserId, IsCompanyBank, IsInternalBank, IsActive)
-        VALUES (@bName, @acName, @acNum, @branch, @pic, @uid, @isComp, @isInt, 1)
+        VALUES (@bName, @acName, @acNum, @branch, @pic, @uid, @isComp, @isInt, 1);
+        SELECT SCOPE_IDENTITY() AS Id;
       `);
       
     const newBankId = insertRes.recordset[0].Id;
@@ -234,7 +235,7 @@ exports.addBank = async (req, res) => {
     if (transaction) await transaction.rollback();
     if (err.number === 2627 || err.number === 2601) {
          if (filePath) deleteFile(filePath);
-         return res.status(200).json({ message: "Bank already exists" });
+         return res.status(409).json({ message: "Bank already exists" });
     }
     console.error("ADD BANK ERROR:", err);
     if (filePath) deleteFile(filePath);
@@ -408,13 +409,15 @@ exports.searchBanks = async (req, res) => {
       SELECT *
       FROM Banks
       WHERE IsActive = 1 AND (
-        BankName LIKE '%${q}%' OR
-        ACName LIKE '%${q}%' OR
-        ACNumber LIKE '%${q}%'
+        BankName LIKE @q OR
+        ACName LIKE @q OR
+        ACNumber LIKE @q
       )
       ORDER BY ${sortColumn} ${order}
     `;
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
     res.status(200).json(result.recordset);
   } catch {
     res.status(500).json({ message: "Search failed" });

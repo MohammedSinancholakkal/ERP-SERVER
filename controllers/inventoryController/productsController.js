@@ -31,8 +31,7 @@ exports.getAllProducts = async (req, res) => {
     else if (sortBy === "hsnCode") sortColumn = "p.HSNCode";
     else if (sortBy === "model") sortColumn = "p.Model";
 
-    // Paginated list with joins
-    // Paginated list with joins
+
     // Paginated list with joins
     const query = `
       SELECT 

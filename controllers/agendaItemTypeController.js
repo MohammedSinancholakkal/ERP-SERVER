@@ -5,7 +5,7 @@ const auditService = require("../services/auditService");
 // GET ALL AGENDA ITEM TYPES
 // ================================  
 exports.getAllAgendaItemTypes = async (req, res) => {
-  try {    
+  try {       
     // Pagination inputs       
     let page = parseInt(req.query.page) || 1;   
     let limit = parseInt(req.query.limit) || 25;      
@@ -73,7 +73,7 @@ exports.addAgendaItemType = async (req, res) => {
     res.status(201).json({ message: "Agenda item type added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Agenda item type already exists" });
+        return res.status(409).json({ message: "Agenda item type already exists" });
     }
     console.log("ADD AGENDA ITEM TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -157,11 +157,13 @@ exports.searchAgendaItemTypes = async (req, res) => {
     const query = `
       SELECT Id, Name
       FROM AgendaItemTypes
-      WHERE IsActive = 1 AND Name LIKE '%${q}%'
+      WHERE IsActive = 1 AND Name LIKE @searchTerm
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input("searchTerm", sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

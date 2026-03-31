@@ -73,7 +73,7 @@ exports.addExpenseType = async (req, res) => {
     res.status(201).json({ message: "Expense type added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Expense type already exists" });
+        return res.status(409).json({ message: "Expense type already exists" });
     }
     console.log("ADD EXPENSE TYPE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -189,11 +189,13 @@ exports.searchExpenseTypes = async (req, res) => {
       FROM ExpenseTypes
       WHERE 
         isActive = 1 AND
-        typeName LIKE '%${q}%'
+        typeName LIKE @q
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

@@ -15,25 +15,36 @@ exports.getAllPurchases = async (req, res) => {
     const startDate = req.query.startDate;
     const endDate = req.query.endDate;
 
-    let whereClause = "WHERE p.IsActive = 1"; // Explicit p alias for clarity
-    
-    // Date Filtering
+    let whereClause = "WHERE p.IsActive = 1";
+    const request = new sql.Request();
+
+    // Date Filtering with parameterization
     if (startDate && endDate) {
-        whereClause += ` AND CAST(p.Date AS DATE) BETWEEN '${startDate}' AND '${endDate}'`;
+        whereClause += ` AND CAST(p.Date AS DATE) BETWEEN @startDate AND @endDate`;
+        request.input("startDate", sql.Date, startDate);
+        request.input("endDate", sql.Date, endDate);
     } else if (startDate) {
-        whereClause += ` AND CAST(p.Date AS DATE) >= '${startDate}'`;
+        whereClause += ` AND CAST(p.Date AS DATE) >= @startDate`;
+        request.input("startDate", sql.Date, startDate);
     } else if (endDate) {
-        whereClause += ` AND CAST(p.Date AS DATE) <= '${endDate}'`;
+        whereClause += ` AND CAST(p.Date AS DATE) <= @endDate`;
+        request.input("endDate", sql.Date, endDate);
     }
 
-    const totalResult = await sql.query(`
+    const totalResult = await request.query(`
       SELECT COUNT(*) AS Total
       FROM Purchases p
       ${whereClause}
     `);
 
-    const sortBy = req.query.sortBy || "id";
+    const sortBy = (req.query.sortBy || "id").toLowerCase();
     const order = (req.query.order || "DESC").toUpperCase();
+
+    // VALIDATE SORTING
+    const validOrders = ["ASC", "DESC"];
+    if (!validOrders.includes(order)) {
+      return res.status(400).json({ message: "Invalid sorting order" });
+    }
 
     
     let sortColumn = "p.InsertDate"; 
@@ -94,11 +105,13 @@ exports.getAllPurchases = async (req, res) => {
       LEFT JOIN Suppliers s ON p.SupplierId = s.Id
       ${whereClause}
       ORDER BY ${sortColumn} ${order}
-      OFFSET ${offset} ROWS
-      FETCH NEXT ${limit} ROWS ONLY
-    `;
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`;
 
-    const result = await sql.query(query);
+    // Reuse request for main query (or create new with same inputs)
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, limit);
+
+    const result = await request.query(query);
 
     res.status(200).json({
       total: totalResult.recordset[0].Total,
@@ -866,7 +879,7 @@ exports.updatePurchase = async (req, res) => {
     await transaction.commit();
     const updatedPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
     const updatedPurchase = updatedPurchaseResult.recordset[0];
-    await auditService.logAction(userId, 'UPDATE_PURCHASE', `Updated Purchase (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip, currentPurchase, updatedPurchase);
+    await auditService.logAction(userId, 'UPDATE_PURCHASE', `Updated Purchase (ID: ${id}) - Net Total: ${safeNumbers.netTotal}`, req.ip);
     res.status(200).json({ message: "Purchase updated successfully" });
 
   } catch (error) {
@@ -944,7 +957,7 @@ exports.deletePurchase = async (req, res) => {
     await transaction.commit();
     const deletedPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
     const deletedPurchase = deletedPurchaseResult.recordset[0];
-    await auditService.logAction(userId, 'DELETE_PURCHASE', `Deleted Purchase (ID: ${id})`, req.ip, currentPurchase, deletedPurchase);
+    await auditService.logAction(userId, 'DELETE_PURCHASE', `Deleted Purchase (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Purchase deleted successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback(); // Check if transaction is active before rollback
@@ -1062,7 +1075,7 @@ exports.restorePurchase = async (req, res) => {
     await transaction.commit();
     const restoredPurchaseResult = await sql.query`SELECT * FROM Purchases WHERE Id = ${id}`;
     const restoredPurchase = restoredPurchaseResult.recordset[0];
-    await auditService.logAction(userId, 'RESTORE_PURCHASE', `Restored Purchase (ID: ${id})`, req.ip, currentPurchase, restoredPurchase);
+    await auditService.logAction(userId, 'RESTORE_PURCHASE', `Restored Purchase (ID: ${id})`, req.ip);
     res.status(200).json({ message: "Purchase restored successfully" });
   } catch (error) {
     if(transaction._curr) await transaction.rollback(); // Check if transaction is active before rollback

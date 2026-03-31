@@ -74,7 +74,7 @@ exports.addRegion = async (req, res) => {
     });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Region already exists" });
+        return res.status(409).json({ message: "Region already exists" });
     }
     console.log("ADD REGION ERROR:", error);
     res.status(500).json({ message: "Server Error" });

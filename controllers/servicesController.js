@@ -68,7 +68,7 @@ exports.addService = async (req, res) => {
     res.status(201).json({ message: "Service added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Service already exists" });
+        return res.status(409).json({ message: "Service already exists" });
     }
     console.log("ADD SERVICE ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -176,13 +176,15 @@ exports.searchServices = async (req, res) => {
       SELECT *
       FROM Services
       WHERE IsActive = 1 AND 
-        (ServiceName LIKE '%${q}%'
-         OR Description LIKE '%${q}%'
-         OR Charge LIKE '%${q}%')
+        (ServiceName LIKE @q
+         OR Description LIKE @q
+         OR Charge LIKE @q)
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input('q', sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

@@ -42,7 +42,6 @@ exports.ensureAccountHead = async ({ name, parentCode, userId }) => {
         const insertRes = await sql.query`
             INSERT INTO Accounts 
             (HeadCode, HeadName, ParentHead, PHeadName, HeadLevel, HeadType, IsTransaction, IsGL, IsActive, InsertUserId, InsertDate)
-            OUTPUT INSERTED.Id
             VALUES 
             (
                 ${newCode}, 
@@ -56,7 +55,8 @@ exports.ensureAccountHead = async ({ name, parentCode, userId }) => {
                 1, 
                 ${userId}, 
                 GETDATE()
-            )
+            );
+            SELECT SCOPE_IDENTITY() AS Id;
         `;
 
         return insertRes.recordset[0].Id;

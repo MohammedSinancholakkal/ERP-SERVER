@@ -73,7 +73,7 @@ exports.addAttendanceStatus = async (req, res) => {
     res.status(201).json({ message: "Attendance status added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Attendance status already exists" });
+        return res.status(409).json({ message: "Attendance status already exists" });
     }
     console.log("ADD ATTENDANCE STATUS ERROR:", error);
     res.status(500).json({ message: "Server Error" });
@@ -157,11 +157,13 @@ exports.searchAttendanceStatuses = async (req, res) => {
     const query = `
       SELECT Id, Name
       FROM AttendanceStatuses
-      WHERE IsActive = 1 AND Name LIKE '%${q}%'
+      WHERE IsActive = 1 AND Name LIKE @searchTerm
       ORDER BY ${sortColumn} ${order}
     `;
 
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input("searchTerm", sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
 
     res.status(200).json(result.recordset);
   } catch (error) {

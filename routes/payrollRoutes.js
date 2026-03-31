@@ -11,6 +11,9 @@ router.get("/periods/all", checkPermission(PERMISSIONS.HR.PAYROLL.VIEW), payroll
 // Add
 router.post("/add", checkPermission(PERMISSIONS.HR.PAYROLL.CREATE), payrollController.addPayroll);
 
+// Get Next Number
+router.get("/next-number", checkPermission(PERMISSIONS.HR.PAYROLL.CREATE), payrollController.getNextPayrollNumber);
+
 // Update
 router.put("/update/:id", checkPermission(PERMISSIONS.HR.PAYROLL.EDIT), payrollController.updatePayroll);
 

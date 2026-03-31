@@ -62,7 +62,7 @@ exports.addTaxPercentage = async (req, res) => {
     res.status(200).json({ message: "Tax Percentage added successfully" });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "Tax Percentage already exists" });
+        return res.status(409).json({ message: "Tax Percentage already exists" });
     }
     console.error("ADD TAX PERCENTAGE ERROR:", error);
     res.status(500).json({ message: "Server error" });

@@ -135,9 +135,17 @@ exports.addPayroll = async (req, res) => {
   } = req.body;
 
   const transaction = new sql.Transaction();
+  let transactionStarted = false;
 
   try {
+    // 0. Duplicate Check
+    const duplicateCheck = await sql.query`SELECT Id FROM Payroll WHERE Number = ${number} AND IsActive = 1`;
+    if (duplicateCheck.recordset.length > 0) {
+      return res.status(409).json({ message: `A payroll with number ${number} already exists.` });
+    }
+
     await transaction.begin();
+    transactionStarted = true;
 
     // -------- PAYROLL MASTER
     const payrollReq = new sql.Request(transaction);
@@ -282,9 +290,49 @@ exports.addPayroll = async (req, res) => {
     res.status(200).json({ message: "Payroll created successfully", payrollId });
 
   } catch (error) {
-    await transaction.rollback();
+    if (transactionStarted) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.error("ROLLBACK ERROR:", rollbackError);
+      }
+    }
     console.error("ADD PAYROLL ERROR:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: error.message || "Server error" });
+  }
+};
+
+// =============================================================
+// GET NEXT PAYROLL NUMBER
+// =============================================================
+exports.getNextPayrollNumber = async (req, res) => {
+  try {
+    const year = new Date().getFullYear();
+    const prefix = `PAYROLL/${year}/`;
+    
+    const result = await sql.query`
+      SELECT TOP 1 Number
+      FROM Payroll
+      WHERE Number LIKE ${prefix + '%'}
+      ORDER BY Id DESC
+    `;
+
+    let nextNo = `${prefix}001`;
+    if (result.recordset.length > 0) {
+      const lastNo = result.recordset[0].Number;
+      const parts = lastNo.split("/");
+      if (parts.length === 3) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num)) {
+          const nextNum = num + 1;
+          nextNo = `${prefix}${String(nextNum).padStart(3, '0')}`;
+        }
+      }
+    }
+    res.status(200).json({ nextNo });
+  } catch (error) {
+    console.error("GET NEXT PAYROLL NO ERROR:", error);
+    res.status(500).json({ message: "Error generating payroll number" });
   }
 };
 

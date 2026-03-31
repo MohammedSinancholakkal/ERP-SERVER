@@ -91,13 +91,13 @@ exports.addState = async (req, res) => {
     `;
     const newId = idResult_newId.recordset[0].Id;
     await auditService.logAction(userId, 'CREATE_STATE', `Created State: ${trimmedName} (ID: ${newId})`, req.ip);
-    res.status(200).json({ 
+    res.status(201).json({ 
         message: "State added successfully",
         record: { id: newId, name: trimmedName, countryId } 
     });
   } catch (error) {
     if (error.number === 2627 || error.number === 2601) {
-        return res.status(200).json({ message: "State already exists" });
+        return res.status(409).json({ message: "State already exists" });
     }
     console.error("ADD STATE ERROR:", error);
     res.status(500).json({ message: "Error adding state" });
@@ -181,10 +181,12 @@ exports.searchStates = async (req, res) => {
       FROM States s
       INNER JOIN Countries c ON s.countryId = c.id
       WHERE s.isActive = 1
-        AND (s.name LIKE '%${q}%' OR c.name LIKE '%${q}%')
+        AND (s.name LIKE @q OR c.name LIKE @q)
       ORDER BY ${sortColumn} ${order}
     `;
-    const result = await sql.query(query);
+    const request = new sql.Request();
+    request.input("q", sql.VarChar, `%${q}%`);
+    const result = await request.query(query);
     res.status(200).json(result.recordset);
   } catch (error) {
     res.status(500).json({ message: "Error searching states" });

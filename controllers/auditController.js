@@ -71,6 +71,21 @@ const parseAuditDetails = (action, details) => {
     return { tableName: updateMatch[1], columnName: 'Name', oldValue: updateMatch[2], newValue: updateMatch[3] };
   }
 
+  // ── LEGACY RESTORE: Restored X (ID: x) ─────────────────────────────────────
+  const restoreRegex = /Restored (.*?) \(ID: (.*?)\)/;
+  const restoreMatch = details.match(restoreRegex);
+  if (restoreMatch) {
+    const tableName = restoreMatch[1].trim().toUpperCase();
+    return { tableName, columnName: '-', oldValue: '-', newValue: `Restored ID: ${restoreMatch[2]}` };
+  }
+
+  const restoreRegex2 = /Restored (.*?): (.*?) \(ID: (.*?)\)/;
+  const restoreMatch2 = details.match(restoreRegex2);
+  if (restoreMatch2) {
+    const tableName = restoreMatch2[1].trim().toUpperCase();
+    return { tableName, columnName: '-', oldValue: '-', newValue: `Restored ${restoreMatch2[2]} (ID: ${restoreMatch2[3]})` };
+  }
+
   // ── LEGACY CREATE: Created X: Name ─────────────────────────────────────────
   const createMatch = details.match(/Created (.*?): (.*)/i);
   if (createMatch) {

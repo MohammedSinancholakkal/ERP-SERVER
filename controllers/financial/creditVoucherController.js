@@ -258,7 +258,7 @@ exports.updateCreditVoucher = async (req, res) => {
 
         const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
         const updatedVoucher = updatedRes.recordset[0];
-        await auditService.logAction(userId, 'UPDATE_CREDIT_VOUCHER', `Updated Credit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
+        await auditService.logAction(userId, 'UPDATE_CREDIT_VOUCHER', `Updated Credit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip);
         res.status(200).json({ message: "Credit Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE CREDIT VOUCHER ERROR:", error);
@@ -300,7 +300,7 @@ exports.deleteCreditVoucher = async (req, res) => {
 
         const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
         const deletedVoucher = deletedRes.recordset[0];
-        await auditService.logAction(userId, 'DELETE_CREDIT_VOUCHER', `Deleted Credit Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
+        await auditService.logAction(userId, 'DELETE_CREDIT_VOUCHER', `Deleted Credit Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Credit Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE CREDIT VOUCHER ERROR:", error);
@@ -342,7 +342,7 @@ exports.restoreCreditVoucher = async (req, res) => {
 
         const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM CreditVouchers WHERE Id = @Id`);
         const restoredVoucher = restoredRes.recordset[0];
-        await auditService.logAction(userId, 'RESTORE_CREDIT_VOUCHER', `Restored Credit Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
+        await auditService.logAction(userId, 'RESTORE_CREDIT_VOUCHER', `Restored Credit Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Credit Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE CREDIT VOUCHER ERROR:", error);

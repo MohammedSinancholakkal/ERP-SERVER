@@ -258,7 +258,7 @@ exports.updateDebitVoucher = async (req, res) => {
 
         const updatedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
         const updatedVoucher = updatedRes.recordset[0];
-        await auditService.logAction(userId, 'UPDATE_DEBIT_VOUCHER', `Updated Debit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip, currentVoucher, updatedVoucher);
+        await auditService.logAction(userId, 'UPDATE_DEBIT_VOUCHER', `Updated Debit Voucher (ID: ${id}) - Amount: ${amount}`, req.ip);
         res.status(200).json({ message: "Debit Voucher updated successfully" });
     } catch (error) {
         console.error("UPDATE DEBIT VOUCHER ERROR:", error);
@@ -300,7 +300,7 @@ exports.deleteDebitVoucher = async (req, res) => {
 
         const deletedRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
         const deletedVoucher = deletedRes.recordset[0];
-        await auditService.logAction(userId, 'DELETE_DEBIT_VOUCHER', `Deleted Debit Voucher (ID: ${id})`, req.ip, currentVoucher, deletedVoucher);
+        await auditService.logAction(userId, 'DELETE_DEBIT_VOUCHER', `Deleted Debit Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Debit Voucher deleted successfully" });
     } catch (error) {
         console.error("DELETE DEBIT VOUCHER ERROR:", error);
@@ -342,7 +342,7 @@ exports.restoreDebitVoucher = async (req, res) => {
 
         const restoredRes = await pool.request().input("Id", sql.Int, id).query(`SELECT * FROM DebitVouchers WHERE Id = @Id`);
         const restoredVoucher = restoredRes.recordset[0];
-        await auditService.logAction(userId, 'RESTORE_DEBIT_VOUCHER', `Restored Debit Voucher (ID: ${id})`, req.ip, currentVoucher, restoredVoucher);
+        await auditService.logAction(userId, 'RESTORE_DEBIT_VOUCHER', `Restored Debit Voucher (ID: ${id})`, req.ip);
         res.status(200).json({ message: "Debit Voucher restored successfully" });
     } catch (error) {
         console.error("RESTORE DEBIT VOUCHER ERROR:", error);
